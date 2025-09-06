@@ -4,8 +4,8 @@ import * as path from "path";
 
 const CONTRACT_NAME = "FHECounter";
 
-// <root>/packages/fhevm-hardhat-template
-const rel = "../fhevm-hardhat-template";
+// <root>/packages/fhevm-hardhat
+const rel = "../fhevm-hardhat";
 
 // <root>/packages/site/components
 const outdir = path.resolve("./abi");
@@ -91,7 +91,7 @@ const deployLocalhost = readDeployment("localhost", 31337, CONTRACT_NAME, false 
 // Sepolia is optional
 let deploySepolia = readDeployment("sepolia", 11155111, CONTRACT_NAME, true /* optional */);
 if (!deploySepolia) {
-  deploySepolia= { abi: deployLocalhost.abi, address: "0x0000000000000000000000000000000000000000" };
+  deploySepolia = { abi: deployLocalhost.abi, address: "0x0000000000000000000000000000000000000000" };
 }
 
 if (deployLocalhost && deploySepolia) {
