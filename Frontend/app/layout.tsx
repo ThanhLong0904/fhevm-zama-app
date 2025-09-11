@@ -1,11 +1,20 @@
 import type { Metadata } from "next";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
-import Image from "next/image";
+import { Navigation } from "@/components/Navigation";
+import { Footer } from "@/components/Footer";
+
+const inter = Inter({ 
+  subsets: ["latin"],
+  weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
+  variable: "--font-inter",
+});
 
 export const metadata: Metadata = {
-  title: "Zama FHEVM SDK Quickstart",
-  description: "Zama FHEVM SDK Quickstart app",
+  title: "VoteFHE - Private Voting Platform",
+  description:
+    "Decentralized voting platform with FHE technology, ensuring absolute privacy and transparency.",
 };
 
 export default async function RootLayout({
@@ -14,20 +23,13 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`zama-bg text-foreground antialiased`}>
-        <div className="fixed inset-0 w-full h-full zama-bg z-[-20] min-w-[850px]"></div>
-        <main className="flex flex-col max-w-screen-lg mx-auto pb-20 min-w-[850px]">
-          <nav className="flex w-full px-3 md:px-0 h-fit py-10 justify-between items-center">
-            <Image
-              src="/zama-logo.svg"
-              alt="Zama Logo"
-              width={120}
-              height={120}
-            />
-          </nav>
+    <html lang="en" className={inter.variable}>
+      <body className="min-h-screen bg-[#0F0F23] text-foreground antialiased font-inter">
+        <Navigation />
+        <main>
           <Providers>{children}</Providers>
         </main>
+        <Footer />
       </body>
     </html>
   );
