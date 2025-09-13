@@ -1,22 +1,25 @@
 "use client";
 import { CreateRoomPage } from "@/components/CreateRoomPage";
+import { useRouter } from "next/navigation";
 
 export default function CreateRoom() {
-  const handleNavigate = (page: string, data?: { roomId?: string }) => {
+  const router = useRouter();
+
+  const handleNavigate = (page: string, data?: { roomCode?: string }) => {
     switch (page) {
       case "home":
-        window.location.href = "/";
+        router.push("/");
         break;
-      case "room":
-        if (data?.roomId) {
-          window.location.href = `/room/${data.roomId}`;
+      case "voting":
+        if (data?.roomCode) {
+          router.push(`/room/${data.roomCode}`);
         }
         break;
       case "dashboard":
-        window.location.href = "/dashboard";
+        router.push("/dashboard");
         break;
       default:
-        window.location.href = "/";
+        router.push("/");
     }
   };
 

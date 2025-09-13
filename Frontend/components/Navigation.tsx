@@ -2,18 +2,88 @@
 
 import { useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { Vote, Wallet, Menu, X, LayoutDashboard } from "lucide-react";
-import { Button } from "./ui/button";
+import {
+  Vote,
+  Wallet,
+  Menu,
+  X,
+  LayoutDashboard,
+  Copy,
+  LogOut,
+  RefreshCw,
+} from "lucide-react";
+import { useMetaMaskEthersSigner } from "../hooks/metamask/useMetaMaskEthersSigner";
 
 export function Navigation() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isWalletConnected, setIsWalletConnected] = useState(false);
+  const [isWalletDropdownOpen, setIsWalletDropdownOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
+  // Use real MetaMask connection logic
+  const { accounts, isConnected, connect, provider } = useMetaMaskEthersSigner();
+
   const connectWallet = async () => {
-    // Simulate wallet connection
-    setIsWalletConnected(true);
+    await connect();
+  };
+
+  const copyAddress = async () => {
+    if (accounts?.[0]) {
+      await navigator.clipboard.writeText(accounts[0]);
+      // Could add a toast notification here
+    }
+  };
+
+  const switchAccount = async () => {
+    // Trigger MetaMask account selection dialog
+    if (provider) {
+      try {
+        // Method 1: Request permissions (modern approach)
+        try {
+          await provider.request({
+            method: "wallet_requestPermissions",
+            params: [{ eth_accounts: {} }]
+          });
+        } catch (permError: unknown) {
+          // Method 2: Fallback to basic account request
+          console.log("Permissions method not supported, using fallback:", permError);
+          await provider.request({ 
+            method: "eth_requestAccounts" 
+          });
+        }
+      } catch (error) {
+        console.error("Failed to switch account:", error);
+        // Show user-friendly message
+        alert("Please manually switch accounts in MetaMask and refresh the page.");
+      }
+    }
+    setIsWalletDropdownOpen(false);
+  };
+
+  const logout = async () => {
+    // For MetaMask, we need to disconnect by clearing permissions
+    if (provider) {
+      try {
+        // Try to revoke permissions (newer MetaMask versions)
+        await provider.request({
+          method: "wallet_revokePermissions",
+          params: [{ eth_accounts: {} }]
+        });
+      } catch (error: unknown) {
+        console.log("Revoke permissions not supported, using alternative method:", error);
+        // Alternative: Show user instruction and reload
+        const shouldReload = confirm(
+          "To disconnect your wallet, please manually disconnect in MetaMask, then click OK to refresh the page."
+        );
+        if (shouldReload) {
+          window.location.reload();
+        }
+      }
+    } else {
+      // No provider, just reload to reset state
+      window.location.reload();
+    }
+    setIsWalletDropdownOpen(false);
   };
 
   const handleNavigate = (page: string) => {
@@ -84,19 +154,74 @@ export function Navigation() {
           </div>
 
           {/* Wallet Connection */}
-          <div className="hidden md:flex items-center space-x-4">
-            <Button
-              onClick={connectWallet}
-              variant={isWalletConnected ? "secondary" : "outline"}
-              className={
-                isWalletConnected
-                  ? "bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/30"
-                  : "border-gray-600/50 text-gray-300 hover:bg-white/10 hover:border-white/50"
-              }
+          <div className="hidden md:flex items-center space-x-4 relative">
+            <div
+              className="relative"
+              onMouseEnter={() => isConnected && setIsWalletDropdownOpen(true)}
+              onMouseLeave={() => setIsWalletDropdownOpen(false)}
             >
-              <Wallet className="w-4 h-4 mr-2" />
-              {isWalletConnected ? "Connected" : "Connect Wallet"}
-            </Button>
+              <button
+                onClick={connectWallet}
+                className={`px-3 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 border ${
+                  isConnected
+                    ? "text-white bg-white/10 border-white/20 hover:bg-white/5"
+                    : "text-gray-400 hover:text-white hover:bg-white/5 border-[#fafafa]"
+                }`}
+              >
+                <Wallet className="w-4 h-4" />
+                {isConnected
+                  ? `${accounts?.[0]?.slice(0, 6)}...${accounts?.[0]?.slice(
+                      -4
+                    )}`
+                  : "Connect Wallet"}
+              </button>
+
+              {/* Dropdown Menu */}
+              {isConnected && isWalletDropdownOpen && (
+                <>
+                  {/* Invisible bridge to prevent dropdown from disappearing */}
+                  <div className="absolute left-0 top-full w-64 h-1 bg-transparent" />
+                  
+                  <div 
+                    className="absolute left-0 top-full mt-1 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50"
+                    onMouseEnter={() => setIsWalletDropdownOpen(true)}
+                    onMouseLeave={() => setIsWalletDropdownOpen(false)}
+                  >
+                  <div className="p-3 border-b border-gray-700">
+                    <p className="text-sm text-gray-400">Wallet Address</p>
+                    <div className="flex items-center justify-between">
+                      <p className="text-white font-mono text-sm break-all">
+                        {accounts?.[0]}
+                      </p>
+                      <button
+                        onClick={copyAddress}
+                        className="ml-2 p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
+                        title="Copy address"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="py-2">
+                    <button
+                      onClick={switchAccount}
+                      className="w-full px-3 py-2 text-left rounded-lg transition-all duration-200 flex items-center gap-2 text-gray-400 hover:text-white hover:bg-white/5"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                      Switch Account
+                    </button>
+                    <button
+                      onClick={logout}
+                      className="w-full px-3 py-2 text-left rounded-lg transition-all duration-200 flex items-center gap-2 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      Disconnect
+                    </button>
+                  </div>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
 
           {/* Mobile Menu Button */}
@@ -148,18 +273,22 @@ export function Navigation() {
                 Dashboard
               </button>
               <div className="pt-2 border-t border-gray-700/50">
-                <Button
+                <button
                   onClick={connectWallet}
-                  variant={isWalletConnected ? "secondary" : "outline"}
-                  className={`w-full ${
-                    isWalletConnected
-                      ? "bg-green-500/20 text-green-400 border-green-500/30 hover:bg-green-500/30"
-                      : "border-gray-600/50 text-gray-300 hover:bg-white/10 hover:border-white/50"
+                  className={`w-full px-3 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 ${
+                    isConnected
+                      ? "text-green-400 bg-white/10 hover:text-white hover:bg-white/5"
+                      : "text-gray-400 hover:text-white hover:bg-white/5 border border-[#fafafa]"
                   }`}
                 >
-                  <Wallet className="w-4 h-4 mr-2" />
-                  {isWalletConnected ? "Connected" : "Connect Wallet"}
-                </Button>
+                  <Wallet className="w-4 h-4" />
+                  {isConnected
+                    ? `Connected ${accounts?.[0]?.slice(
+                        0,
+                        6
+                      )}...${accounts?.[0]?.slice(-4)}`
+                    : "Connect Wallet"}
+                </button>
               </div>
             </div>
           </div>

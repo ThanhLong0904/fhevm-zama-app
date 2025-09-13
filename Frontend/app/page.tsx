@@ -1,22 +1,25 @@
 "use client";
 import { HomePage } from "@/components/HomePage";
+import { useRouter } from "next/navigation";
 
 export default function Home() {
-  const handleNavigate = (page: string, data?: { roomId?: string }) => {
+  const router = useRouter();
+
+  const handleNavigate = (page: string, data?: { roomCode?: string }) => {
     switch (page) {
-      case "create-room":
-        window.location.href = "/create-room";
+      case "create":
+        router.push("/create-room");
         break;
-      case "room":
-        if (data?.roomId) {
-          window.location.href = `/room/${data.roomId}`;
+      case "voting":
+        if (data?.roomCode) {
+          router.push(`/room/${data.roomCode}`);
         }
         break;
       case "dashboard":
-        window.location.href = "/dashboard";
+        router.push("/dashboard");
         break;
       default:
-        window.location.href = "/";
+        router.push("/");
     }
   };
 

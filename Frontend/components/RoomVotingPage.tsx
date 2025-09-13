@@ -50,7 +50,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState("");
 
-  // Mock data for demonstration
+  // Mock data for demonstration - chỉ chạy 1 lần khi component mount
   useEffect(() => {
     // Simulate loading room data
     const mockRoom = {
@@ -71,8 +71,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         description: "5 years marketing experience, digital specialist",
         image:
           "https://images.unsplash.com/photo-1701463387028-3947648f1337?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NTc0NzgxNzR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-        votes: hasVoted ? 7 : 0,
-        percentage: hasVoted ? 58.3 : 0,
+        votes: 0,
+        percentage: 0,
       },
       {
         id: "2",
@@ -80,8 +80,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         description: "Content marketing and social media expert",
         image:
           "https://images.unsplash.com/photo-1425421669292-0c3da3b8f529?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxidXNpbmVzcyUyMHBlcnNvbiUyMHByb2Zlc3Npb25hbHxlbnwxfHx8fDE3NTc0ODE3NDZ8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-        votes: hasVoted ? 3 : 0,
-        percentage: hasVoted ? 25 : 0,
+        votes: 0,
+        percentage: 0,
       },
       {
         id: "3",
@@ -89,19 +89,34 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         description: "Team management and strategy development experience",
         image:
           "https://images.unsplash.com/photo-1697551458746-b86ccf5049d4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxkaXZlcnNlJTIwcGVvcGxlJTIwcG9ydHJhaXRzfGVufDF8fHx8MTc1NzQ3NTEwMXww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-        votes: hasVoted ? 2 : 0,
-        percentage: hasVoted ? 16.7 : 0,
+        votes: 0,
+        percentage: 0,
       },
     ];
 
     setRoom(mockRoom);
     setCandidates(mockCandidates);
     setCurrentParticipants(mockRoom.participants);
+  }, [roomCode]); // Chỉ depend vào roomCode, không depend vào hasVoted
 
-    // Check if enough people have voted to show results
-    const votedCount = hasVoted ? 12 : 11;
-    setShowResults(votedCount >= mockRoom.maxParticipants || hasVoted);
-  }, [roomCode, hasVoted]);
+  // Separate effect for updating results when voted
+  useEffect(() => {
+    if (hasVoted) {
+      // Update candidates with simulated vote results
+      setCandidates((prev) =>
+        prev.map((candidate, index) => {
+          const simulatedVotes = [7, 3, 2][index] || 0;
+          const totalVotes = 12;
+          return {
+            ...candidate,
+            votes: simulatedVotes,
+            percentage: (simulatedVotes / totalVotes) * 100,
+          };
+        })
+      );
+      setShowResults(true);
+    }
+  }, [hasVoted]); // Chỉ chạy khi hasVoted thay đổi
 
   // Timer countdown
   useEffect(() => {
@@ -308,11 +323,11 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
               {/* Candidates */}
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-2xl text-white">Danh sách ứng viên</h2>
+                  <h2 className="text-2xl text-white">Candidates</h2>
                   {showResults && (
                     <div className="flex items-center gap-2 text-sm text-gray-400">
                       <Eye className="w-4 h-4" />
-                      Kết quả hiện tại
+                      Current Results
                     </div>
                   )}
                 </div>
@@ -359,7 +374,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                                 </h3>
                                 {isSelected && !hasVoted && (
                                   <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
-                                    Đã chọn
+                                    Selected
                                   </Badge>
                                 )}
                               </div>
@@ -372,7 +387,9 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                                 <div className="space-y-2">
                                   <div className="flex items-center justify-between text-sm">
                                     <span className="text-gray-400">
-                                      {candidate.votes} phiếu
+                                      <span className="text-gray-400">
+                                        {candidate.votes} votes
+                                      </span>
                                     </span>
                                     <span className="text-gray-400">
                                       {candidate.percentage.toFixed(1)}%
@@ -403,12 +420,12 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                       {isVoting ? (
                         <>
                           <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
-                          Đang xử lý...
+                          Processing...
                         </>
                       ) : (
                         <>
                           <Vote className="w-5 h-5 mr-2" />
-                          Bỏ phiếu
+                          Vote
                         </>
                       )}
                     </Button>
@@ -435,25 +452,25 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                 <CardHeader>
                   <CardTitle className="text-white flex items-center gap-2">
                     <Shield className="w-5 h-5 text-blue-400" />
-                    Bảo mật FHE
+                    FHE Security
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <div className="flex items-center gap-2 text-gray-300">
                     <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                    Phiếu được mã hóa hoàn toàn
+                    Votes are fully encrypted
                   </div>
                   <div className="flex items-center gap-2 text-gray-300">
                     <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                    Không ai biết bạn vote ai
+                    No one knows who you voted for
                   </div>
                   <div className="flex items-center gap-2 text-gray-300">
                     <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                    Kết quả minh bạch
+                    Transparent results
                   </div>
                   <div className="flex items-center gap-2 text-gray-300">
                     <div className="w-2 h-2 bg-green-400 rounded-full"></div>
-                    Blockchain xác thực
+                    Blockchain verification
                   </div>
                 </CardContent>
               </Card>
@@ -461,9 +478,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
               {/* Voting Process */}
               <Card className="bg-gray-800/50 border-gray-700/50">
                 <CardHeader>
-                  <CardTitle className="text-white">
-                    Quy trình bỏ phiếu
-                  </CardTitle>
+                  <CardTitle className="text-white">Voting Process</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <div
@@ -480,7 +495,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                     >
                       {hasVoted ? <Check className="w-3 h-3" /> : "1"}
                     </div>
-                    Chọn ứng viên
+                    Select candidate
                   </div>
                   <div
                     className={`flex items-center gap-2 ${
@@ -496,7 +511,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                     >
                       {hasVoted ? <Check className="w-3 h-3" /> : "2"}
                     </div>
-                    Mã hóa FHE
+                    FHE Encryption
                   </div>
                   <div
                     className={`flex items-center gap-2 ${
@@ -512,7 +527,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                     >
                       {hasVoted ? <Check className="w-3 h-3" /> : "3"}
                     </div>
-                    Gửi lên Blockchain
+                    Submit to Blockchain
                   </div>
                   <div
                     className={`flex items-center gap-2 ${
@@ -528,7 +543,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                     >
                       {showResults ? <Check className="w-3 h-3" /> : "4"}
                     </div>
-                    Công bố kết quả
+                    Publish results
                   </div>
                 </CardContent>
               </Card>
@@ -536,23 +551,23 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
               {/* Room Info */}
               <Card className="bg-gray-800/50 border-gray-700/50">
                 <CardHeader>
-                  <CardTitle className="text-white">Thông tin phòng</CardTitle>
+                  <CardTitle className="text-white">Room Information</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Tạo bởi:</span>
+                    <span className="text-gray-400">Created by:</span>
                     <span className="text-white">Admin</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Tạo lúc:</span>
+                    <span className="text-gray-400">Created at:</span>
                     <span className="text-white">
                       {room.createdAt.toLocaleDateString("vi-VN")}
                     </span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Trạng thái:</span>
+                    <span className="text-gray-400">Status:</span>
                     <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                      Hoạt động
+                      Active
                     </Badge>
                   </div>
                 </CardContent>

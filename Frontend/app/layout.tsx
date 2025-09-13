@@ -2,10 +2,10 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
-import { Navigation } from "@/components/Navigation";
+import { NavigationWrapper } from "@/components/NavigationWrapper";
 import { Footer } from "@/components/Footer";
 
-const inter = Inter({ 
+const inter = Inter({
   subsets: ["latin"],
   weight: ["100", "200", "300", "400", "500", "600", "700", "800", "900"],
   variable: "--font-inter",
@@ -25,11 +25,11 @@ export default async function RootLayout({
   return (
     <html lang="en" className={inter.variable}>
       <body className="min-h-screen bg-[#0F0F23] text-foreground antialiased font-inter">
-        <Navigation />
-        <main>
-          <Providers>{children}</Providers>
-        </main>
-        <Footer />
+        <Providers>
+          <NavigationWrapper />
+          <main>{children}</main>
+          <Footer />
+        </Providers>
       </body>
     </html>
   );
