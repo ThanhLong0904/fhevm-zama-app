@@ -89,7 +89,7 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
     }
 
     setIsCreating(true);
-    
+    console.log("1111");
     // Simulate API call
     await new Promise(resolve => setTimeout(resolve, 2000));
     

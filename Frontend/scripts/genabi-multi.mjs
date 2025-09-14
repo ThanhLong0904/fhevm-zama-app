@@ -33,12 +33,6 @@ if (!fs.existsSync(outdir)) {
 }
 
 const deploymentsDir = path.join(dir, "deployments");
-// if (!fs.existsSync(deploymentsDir)) {
-//   console.error(
-//     `${line}Unable to locate 'deployments' directory.\n\n1. Goto '${dirname}' directory\n2. Run 'npx hardhat deploy --network ${chainName}'.${line}`
-//   );
-//   process.exit(1);
-// }
 
 function deployOnHardhatNode() {
   if (process.platform === "win32") {
@@ -114,7 +108,6 @@ CONTRACTS.forEach(CONTRACT_NAME => {
     }
   }
 
-
   const tsCode = `
 /*
   This file is auto-generated.
@@ -122,6 +115,7 @@ CONTRACTS.forEach(CONTRACT_NAME => {
 */
 export const ${CONTRACT_NAME}ABI = ${JSON.stringify({ abi: deployLocalhost.abi }, null, 2)} as const;
 \n`;
+
   const tsAddresses = `
 /*
   This file is auto-generated.
@@ -133,15 +127,14 @@ export const ${CONTRACT_NAME}Addresses = {
 };
 `;
 
-  console.log(`Generated ${path.join(outdir, `${CONTRACT_NAME}ABI.ts`)}`);
-  console.log(`Generated ${path.join(outdir, `${CONTRACT_NAME}Addresses.ts`)}`);
+  const abiPath = path.join(outdir, `${CONTRACT_NAME}ABI.ts`);
+  const addressesPath = path.join(outdir, `${CONTRACT_NAME}Addresses.ts`);
 
-  fs.writeFileSync(path.join(outdir, `${CONTRACT_NAME}ABI.ts`), tsCode, "utf-8");
-  fs.writeFileSync(
-    path.join(outdir, `${CONTRACT_NAME}Addresses.ts`),
-    tsAddresses,
-    "utf-8"
-  );
+  fs.writeFileSync(abiPath, tsCode);
+  fs.writeFileSync(addressesPath, tsAddresses);
+
+  console.log(`Generated ${abiPath}`);
+  console.log(`Generated ${addressesPath}`);
 });
 
 console.log("\nABI generation completed!");

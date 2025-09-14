@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Card,
   CardContent,
@@ -22,6 +22,9 @@ import {
   Eye,
   EyeOff,
 } from "lucide-react";
+import { useVotingRoom } from "@/hooks/useVotingRoom";
+import { useFhevm } from "@/fhevm/useFhevm";
+import { useMetaMaskEthersSigner } from "@/hooks/metamask/useMetaMaskEthersSigner";
 
 interface Candidate {
   id: string;
@@ -44,60 +47,89 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     null
   );
   const [hasVoted, setHasVoted] = useState(false);
+  const [isParticipant, setIsParticipant] = useState(false);
   const [isVoting, setIsVoting] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [currentParticipants, setCurrentParticipants] = useState(0);
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState("");
+  const hasLoadedRef = useRef(false);
 
-  // Mock data for demonstration - chỉ chạy 1 lần khi component mount
+  // FHE and Web3 hooks
+    const {
+    provider,
+    chainId,
+    ethersSigner,
+    ethersReadonlyProvider,
+    initialMockChains,
+  } = useMetaMaskEthersSigner();
+  const {
+    instance: fhevmInstance,
+  } = useFhevm({
+    provider,
+    chainId,
+    initialMockChains,
+    enabled: true, // use enabled to dynamically create the instance on-demand
+  });
+  
+  // VotingRoom hook
+  const votingRoom = useVotingRoom({
+    instance: fhevmInstance,
+    ethersSigner,
+    ethersReadonlyProvider,
+    chainId,
+  });
+
+  // Load room data on component mount
   useEffect(() => {
-    // Simulate loading room data
-    const mockRoom = {
-      code: roomCode || "ROOM001",
-      title: "Marketing Team Leader Election",
-      description: "Choose the marketing team leader for Q4 2024",
-      maxParticipants: 15,
-      participants: 12,
-      status: "active",
-      endTime: new Date(Date.now() + 2 * 60 * 60 * 1000), // 2 hours from now
-      createdAt: new Date(),
+    const loadRoomData = async () => {
+      if (!roomCode || hasLoadedRef.current) return;
+
+      try {
+        // Get room information
+        const roomInfo = await votingRoom.getRoomInfo(roomCode);
+        if (roomInfo) {
+          setRoom({
+            code: roomInfo.code,
+            title: roomInfo.title,
+            description: roomInfo.description,
+            maxParticipants: roomInfo.maxParticipants,
+            participants: roomInfo.participantCount,
+            status: roomInfo.isActive ? "active" : "ended",
+            endTime: new Date(roomInfo.endTime * 1000),
+            createdAt: new Date(),
+          });
+          setCurrentParticipants(roomInfo.participantCount);
+        }
+
+        // Get candidates
+        const candidatesList = await votingRoom.getCandidates(roomCode);
+        setCandidates(candidatesList.map(c => ({
+          id: c.id.toString(),
+          name: c.name,
+          description: c.description,
+          image: c.imageUrl,
+          votes: 0,
+          percentage: 0,
+        })));
+
+        // Check voting status
+        const { hasVoted: userHasVoted, isParticipant: userIsParticipant } = await votingRoom.checkVotingStatus(roomCode);
+        setHasVoted(userHasVoted);
+        setIsParticipant(userIsParticipant);
+        setShowResults(userHasVoted);
+
+        hasLoadedRef.current = true;
+
+      } catch (error) {
+        console.error("Error loading room data:", error);
+      }
     };
 
-    const mockCandidates: Candidate[] = [
-      {
-        id: "1",
-        name: "Sarah Johnson",
-        description: "5 years marketing experience, digital specialist",
-        image:
-          "https://images.unsplash.com/photo-1701463387028-3947648f1337?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NTc0NzgxNzR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-        votes: 0,
-        percentage: 0,
-      },
-      {
-        id: "2",
-        name: "Michael Chen",
-        description: "Content marketing and social media expert",
-        image:
-          "https://images.unsplash.com/photo-1425421669292-0c3da3b8f529?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxidXNpbmVzcyUyMHBlcnNvbiUyMHByb2Zlc3Npb25hbHxlbnwxfHx8fDE3NTc0ODE3NDZ8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-        votes: 0,
-        percentage: 0,
-      },
-      {
-        id: "3",
-        name: "Alex Rodriguez",
-        description: "Team management and strategy development experience",
-        image:
-          "https://images.unsplash.com/photo-1697551458746-b86ccf5049d4?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxkaXZlcnNlJTIwcGVvcGxlJTIwcG9ydHJhaXRzfGVufDF8fHx8MTc1NzQ3NTEwMXww&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
-        votes: 0,
-        percentage: 0,
-      },
-    ];
-
-    setRoom(mockRoom);
-    setCandidates(mockCandidates);
-    setCurrentParticipants(mockRoom.participants);
-  }, [roomCode]); // Chỉ depend vào roomCode, không depend vào hasVoted
+    loadRoomData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomCode]); // Only depend on roomCode to prevent infinite loop
 
   // Separate effect for updating results when voted
   useEffect(() => {
@@ -144,37 +176,65 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   }, [room]);
 
   const handleVote = async () => {
-    if (!selectedCandidate) return;
+    if (!selectedCandidate || !roomCode) return;
 
     setIsVoting(true);
 
-    // Simulate FHE encryption and blockchain transaction
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    try {
+      const candidateId = parseInt(selectedCandidate);
+      console.log("🗳️ Casting vote for candidate ID:", candidateId);
+      
+      const success = await votingRoom.castVote(roomCode, candidateId);
 
-    setHasVoted(true);
-    setIsVoting(false);
-    setCurrentParticipants((prev) => prev + 1);
-
-    // Update candidates with new vote counts (simulated)
-    setCandidates((prev) =>
-      prev.map((candidate) => {
-        if (candidate.id === selectedCandidate) {
-          const newVotes = candidate.votes + 1;
-          return {
-            ...candidate,
-            votes: newVotes,
-            percentage: (newVotes / (currentParticipants + 1)) * 100,
-          };
-        }
-        return candidate;
-      })
-    );
+      if (success) {
+        setHasVoted(true);
+        setShowResults(true);
+        setCurrentParticipants((prev) => prev + 1);
+        
+        // Note: With FHE, we can't immediately see vote counts
+        // In a real implementation, you might want to show a success message
+        // and let users know results will be available after voting ends
+        alert("Vote cast successfully! 🎉");
+      } else {
+        const errorMessage = votingRoom.message || "Unknown error occurred while casting vote";
+        console.error("Failed to cast vote:", errorMessage);
+        // You might want to show a toast notification here
+        alert(`Vote failed: ${errorMessage}`);
+      }
+    } catch (error) {
+      console.error("Error casting vote:", error);
+      alert(`Unexpected error: ${error}`);
+    } finally {
+      setIsVoting(false);
+    }
   };
 
   const copyRoomCode = () => {
     navigator.clipboard.writeText(room?.code || "");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleJoinRoom = async () => {
+    if (!roomCode) return;
+
+    setIsJoining(true);
+    try {
+      const success = await votingRoom.joinRoom(roomCode, ""); // Empty password for now
+      
+      if (success) {
+        setIsParticipant(true);
+        alert("Successfully joined the room! 🎉");
+      } else {
+        const errorMessage = votingRoom.message || "Failed to join room";
+        alert(`Join failed: ${errorMessage}`);
+      }
+    } catch (error) {
+      console.error("Error joining room:", error);
+      alert(`Join error: ${error}`);
+    } finally {
+      setIsJoining(false);
+    }
   };
 
   const getWinner = () => {
@@ -299,6 +359,36 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                 </CardContent>
               </Card>
 
+              {/* Join Room Status */}
+              {!isParticipant && (
+                <Card className="bg-yellow-500/10 border-yellow-500/30 mb-8">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="p-2 bg-yellow-500/20 rounded-full">
+                          <Users className="w-5 h-5 text-yellow-400" />
+                        </div>
+                        <div>
+                          <div className="text-yellow-400">
+                            You need to join this room to vote
+                          </div>
+                          <div className="text-sm text-yellow-300/70">
+                            Click the button to become a participant
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        onClick={handleJoinRoom}
+                        disabled={isJoining}
+                        className="bg-yellow-500 hover:bg-yellow-600 text-black"
+                      >
+                        {isJoining ? "Joining..." : "Join Room"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Voting Status */}
               {hasVoted && (
                 <Card className="bg-green-500/10 border-green-500/30 mb-8">
@@ -414,7 +504,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   <div className="text-center">
                     <Button
                       onClick={handleVote}
-                      disabled={!selectedCandidate || isVoting}
+                      disabled={!selectedCandidate || isVoting || !isParticipant}
                       className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:opacity-50"
                     >
                       {isVoting ? (
@@ -425,11 +515,11 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                       ) : (
                         <>
                           <Vote className="w-5 h-5 mr-2" />
-                          Vote
+                          {!isParticipant ? "Join Room First" : "Vote"}
                         </>
                       )}
                     </Button>
-                    {selectedCandidate && (
+                    {selectedCandidate && isParticipant && (
                       <p className="text-sm text-gray-400 mt-2">
                         Bạn đang chọn:{" "}
                         <span className="text-white">

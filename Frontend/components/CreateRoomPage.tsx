@@ -24,6 +24,9 @@ import {
   Check,
   Lock,
 } from "lucide-react";
+import { useVotingRoom } from "@/hooks/useVotingRoom";
+import { useFhevm } from "@/fhevm/useFhevm";
+import { useMetaMaskEthersSigner } from "@/hooks/metamask/useMetaMaskEthersSigner";
 
 interface Candidate {
   id: string;
@@ -49,6 +52,31 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
   const [hasPassword, setHasPassword] = useState(false);
   const [roomPassword, setRoomPassword] = useState("");
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
+
+  // FHE and Web3 hooks
+   const {
+    provider,
+    chainId,
+    ethersSigner,
+    ethersReadonlyProvider,
+    initialMockChains,
+  } = useMetaMaskEthersSigner();
+
+  const {
+    instance: fhevmInstance,
+  } = useFhevm({
+    provider,
+    chainId,
+    initialMockChains,
+    enabled: true,
+  });
+  
+  const votingRoom = useVotingRoom({
+    instance: fhevmInstance,
+    ethersSigner,
+    ethersReadonlyProvider,
+    chainId,
+  });
 
   const defaultImages = [
     "https://images.unsplash.com/photo-1701463387028-3947648f1337?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=M3w3Nzg4Nzd8MHwxfHNlYXJjaHwxfHxwcm9mZXNzaW9uYWwlMjBhdmF0YXIlMjBwb3J0cmFpdHxlbnwxfHx8fDE3NTc0NzgxNzR8MA&ixlib=rb-4.1.0&q=80&w=1080&utm_source=figma&utm_medium=referral",
@@ -111,26 +139,56 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
     }
 
     setIsCreating(true);
+    try {
+      // Calculate end time in hours from now
+      const endHours = endTime ? Math.ceil((new Date(endTime).getTime() - Date.now()) / (1000 * 60 * 60)) : 24;
+      
+      // Create room using VotingRoom contract
+      const success = await votingRoom.createRoom(
+        roomCode,
+        roomTitle,
+        roomDescription,
+        parseInt(maxParticipants),
+        endHours,
+        hasPassword,
+        roomPassword
+      );
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+      if (success) {
+        // Add candidates to the room
+        for (const candidate of candidates.filter((c) => c.name.trim())) {
+          await votingRoom.addCandidate(
+            roomCode,
+            candidate.name,
+            candidate.description,
+            candidate.image
+          );
+        }
 
-    const newRoom = {
-      code: roomCode,
-      title: roomTitle,
-      description: roomDescription,
-      maxParticipants: parseInt(maxParticipants),
-      endTime,
-      candidates: candidates.filter((c) => c.name.trim()),
-      createdAt: new Date(),
-      participants: 0,
-      status: "active",
-      hasPassword,
-      password: hasPassword ? roomPassword : null,
-    };
+        const newRoom = {
+          code: roomCode,
+          title: roomTitle,
+          description: roomDescription,
+          maxParticipants: parseInt(maxParticipants),
+          endTime,
+          candidates: candidates.filter((c) => c.name.trim()),
+          createdAt: new Date(),
+          participants: 1, // Creator is automatically a participant
+          status: "active",
+          hasPassword,
+          password: hasPassword ? roomPassword : null,
+        };
 
-    setCreatedRoom(newRoom);
-    setIsCreating(false);
+        setCreatedRoom(newRoom);
+      } else {
+        // Handle error case
+        console.error("Failed to create room:", votingRoom.message);
+      }
+    } catch (error) {
+      console.error("Error creating room:", error);
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const copyRoomCode = () => {
