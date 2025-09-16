@@ -9,6 +9,7 @@ import {
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
+import { ShowError } from "./ui/show-error";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import {
   ArrowLeft,
@@ -54,25 +55,25 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   const [currentParticipants, setCurrentParticipants] = useState(0);
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState("");
+  const [showError, setShowError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const hasLoadedRef = useRef(false);
 
   // FHE and Web3 hooks
-    const {
+  const {
     provider,
     chainId,
     ethersSigner,
     ethersReadonlyProvider,
     initialMockChains,
   } = useMetaMaskEthersSigner();
-  const {
-    instance: fhevmInstance,
-  } = useFhevm({
+  const { instance: fhevmInstance } = useFhevm({
     provider,
     chainId,
     initialMockChains,
     enabled: true, // use enabled to dynamically create the instance on-demand
   });
-  
+
   // VotingRoom hook
   const votingRoom = useVotingRoom({
     instance: fhevmInstance,
@@ -105,23 +106,25 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
 
         // Get candidates
         const candidatesList = await votingRoom.getCandidates(roomCode);
-        setCandidates(candidatesList.map(c => ({
-          id: c.id.toString(),
-          name: c.name,
-          description: c.description,
-          image: c.imageUrl,
-          votes: 0,
-          percentage: 0,
-        })));
+        setCandidates(
+          candidatesList.map((c) => ({
+            id: c.id.toString(),
+            name: c.name,
+            description: c.description,
+            image: c.imageUrl,
+            votes: 0,
+            percentage: 0,
+          }))
+        );
 
         // Check voting status
-        const { hasVoted: userHasVoted, isParticipant: userIsParticipant } = await votingRoom.checkVotingStatus(roomCode);
+        const { hasVoted: userHasVoted, isParticipant: userIsParticipant } =
+          await votingRoom.checkVotingStatus(roomCode);
         setHasVoted(userHasVoted);
         setIsParticipant(userIsParticipant);
         setShowResults(userHasVoted);
 
         hasLoadedRef.current = true;
-
       } catch (error) {
         console.error("Error loading room data:", error);
       }
@@ -183,27 +186,29 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     try {
       const candidateId = parseInt(selectedCandidate);
       console.log("🗳️ Casting vote for candidate ID:", candidateId);
-      
+
       const success = await votingRoom.castVote(roomCode, candidateId);
 
       if (success) {
         setHasVoted(true);
         setShowResults(true);
         setCurrentParticipants((prev) => prev + 1);
-        
+
         // Note: With FHE, we can't immediately see vote counts
         // In a real implementation, you might want to show a success message
         // and let users know results will be available after voting ends
         alert("Vote cast successfully! 🎉");
       } else {
-        const errorMessage = votingRoom.message || "Unknown error occurred while casting vote";
+        const errorMessage =
+          votingRoom.message || "Unknown error occurred while casting vote";
         console.error("Failed to cast vote:", errorMessage);
-        // You might want to show a toast notification here
-        alert(`Vote failed: ${errorMessage}`);
+        setErrorMessage(`Vote failed: ${errorMessage}`);
+        setShowError(true);
       }
     } catch (error) {
       console.error("Error casting vote:", error);
-      alert(`Unexpected error: ${error}`);
+      setErrorMessage(`Unexpected error: ${error}`);
+      setShowError(true);
     } finally {
       setIsVoting(false);
     }
@@ -215,23 +220,30 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const dismissError = () => {
+    setShowError(false);
+    setErrorMessage("");
+  };
+
   const handleJoinRoom = async () => {
     if (!roomCode) return;
 
     setIsJoining(true);
     try {
       const success = await votingRoom.joinRoom(roomCode, ""); // Empty password for now
-      
+
       if (success) {
         setIsParticipant(true);
         alert("Successfully joined the room! 🎉");
       } else {
         const errorMessage = votingRoom.message || "Failed to join room";
-        alert(`Join failed: ${errorMessage}`);
+        setErrorMessage(`Join failed: ${errorMessage}`);
+        setShowError(true);
       }
     } catch (error) {
       console.error("Error joining room:", error);
-      alert(`Join error: ${error}`);
+      setErrorMessage(`Join error: ${error}`);
+      setShowError(true);
     } finally {
       setIsJoining(false);
     }
@@ -256,6 +268,13 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
 
   return (
     <div className="min-h-screen bg-[#0F0F23] py-8">
+      {/* Show Error Component */}
+      <ShowError
+        isVisible={showError}
+        message={errorMessage}
+        onDismiss={dismissError}
+      />
+
       <div className="container mx-auto px-4">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
@@ -504,7 +523,9 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   <div className="text-center">
                     <Button
                       onClick={handleVote}
-                      disabled={!selectedCandidate || isVoting || !isParticipant}
+                      disabled={
+                        !selectedCandidate || isVoting || !isParticipant
+                      }
                       className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:opacity-50"
                     >
                       {isVoting ? (

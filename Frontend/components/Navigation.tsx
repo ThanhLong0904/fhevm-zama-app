@@ -11,26 +11,29 @@ import {
   Copy,
   LogOut,
   RefreshCw,
+  Check,
 } from "lucide-react";
 import { useMetaMaskEthersSigner } from "../hooks/metamask/useMetaMaskEthersSigner";
+import { Button } from "./ui/button";
 
 export function Navigation() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isWalletDropdownOpen, setIsWalletDropdownOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
-
   // Use real MetaMask connection logic
-  const { accounts, isConnected, connect, provider } = useMetaMaskEthersSigner();
+  const { accounts, isConnected, connect, provider } =
+    useMetaMaskEthersSigner();
 
   const connectWallet = async () => {
     await connect();
   };
-
+  const [copied, setCopied] = useState(false);
   const copyAddress = async () => {
     if (accounts?.[0]) {
       await navigator.clipboard.writeText(accounts[0]);
-      // Could add a toast notification here
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
@@ -42,19 +45,24 @@ export function Navigation() {
         try {
           await provider.request({
             method: "wallet_requestPermissions",
-            params: [{ eth_accounts: {} }]
+            params: [{ eth_accounts: {} }],
           });
         } catch (permError: unknown) {
           // Method 2: Fallback to basic account request
-          console.log("Permissions method not supported, using fallback:", permError);
-          await provider.request({ 
-            method: "eth_requestAccounts" 
+          console.log(
+            "Permissions method not supported, using fallback:",
+            permError
+          );
+          await provider.request({
+            method: "eth_requestAccounts",
           });
         }
       } catch (error) {
         console.error("Failed to switch account:", error);
         // Show user-friendly message
-        alert("Please manually switch accounts in MetaMask and refresh the page.");
+        alert(
+          "Please manually switch accounts in MetaMask and refresh the page."
+        );
       }
     }
     setIsWalletDropdownOpen(false);
@@ -67,10 +75,13 @@ export function Navigation() {
         // Try to revoke permissions (newer MetaMask versions)
         await provider.request({
           method: "wallet_revokePermissions",
-          params: [{ eth_accounts: {} }]
+          params: [{ eth_accounts: {} }],
         });
       } catch (error: unknown) {
-        console.log("Revoke permissions not supported, using alternative method:", error);
+        console.log(
+          "Revoke permissions not supported, using alternative method:",
+          error
+        );
         // Alternative: Show user instruction and reload
         const shouldReload = confirm(
           "To disconnect your wallet, please manually disconnect in MetaMask, then click OK to refresh the page."
@@ -164,7 +175,7 @@ export function Navigation() {
                 onClick={connectWallet}
                 className={`px-3 py-2 rounded-lg transition-all duration-200 flex items-center gap-2 border ${
                   isConnected
-                    ? "text-white bg-white/10 border-white/20 hover:bg-white/5"
+                    ? "bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-lg transition-all duration-300 hover:scale-105 hover:shadow-xl flex items-center gap-2 border-none"
                     : "text-gray-400 hover:text-white hover:bg-white/5 border-[#fafafa]"
                 }`}
               >
@@ -181,43 +192,48 @@ export function Navigation() {
                 <>
                   {/* Invisible bridge to prevent dropdown from disappearing */}
                   <div className="absolute left-0 top-full w-64 h-1 bg-transparent" />
-                  
-                  <div 
+
+                  <div
                     className="absolute left-0 top-full mt-1 w-64 bg-gray-800 border border-gray-700 rounded-lg shadow-lg z-50"
                     onMouseEnter={() => setIsWalletDropdownOpen(true)}
                     onMouseLeave={() => setIsWalletDropdownOpen(false)}
                   >
-                  <div className="p-3 border-b border-gray-700">
-                    <p className="text-sm text-gray-400">Wallet Address</p>
-                    <div className="flex items-center justify-between">
-                      <p className="text-white font-mono text-sm break-all">
-                        {accounts?.[0]}
-                      </p>
+                    <div className="p-3 border-b border-gray-700">
+                      <p className="text-sm text-gray-400">Wallet Address</p>
+                      <div className="flex items-center justify-between">
+                        <p className="text-white font-mono text-sm break-all">
+                          {accounts?.[0]}
+                        </p>
+                        <Button
+                          onClick={copyAddress}
+                          variant="ghost"
+                          size="sm"
+                          className="text-gray-400 hover:text-white"
+                        >
+                          {copied ? (
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                    <div className="py-2">
                       <button
-                        onClick={copyAddress}
-                        className="ml-2 p-1 text-gray-400 hover:text-white hover:bg-white/10 rounded transition-colors"
-                        title="Copy address"
+                        onClick={switchAccount}
+                        className="w-full px-3 py-2 text-left rounded-lg transition-all duration-200 flex items-center gap-2 text-gray-400 hover:text-white hover:bg-white/5"
                       >
-                        <Copy className="w-4 h-4" />
+                        <RefreshCw className="w-4 h-4" />
+                        Switch Account
+                      </button>
+                      <button
+                        onClick={logout}
+                        className="w-full px-3 py-2 text-left rounded-lg transition-all duration-200 flex items-center gap-2 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        Disconnect
                       </button>
                     </div>
-                  </div>
-                  <div className="py-2">
-                    <button
-                      onClick={switchAccount}
-                      className="w-full px-3 py-2 text-left rounded-lg transition-all duration-200 flex items-center gap-2 text-gray-400 hover:text-white hover:bg-white/5"
-                    >
-                      <RefreshCw className="w-4 h-4" />
-                      Switch Account
-                    </button>
-                    <button
-                      onClick={logout}
-                      className="w-full px-3 py-2 text-left rounded-lg transition-all duration-200 flex items-center gap-2 text-red-400 hover:text-red-300 hover:bg-red-500/10"
-                    >
-                      <LogOut className="w-4 h-4" />
-                      Disconnect
-                    </button>
-                  </div>
                   </div>
                 </>
               )}
@@ -283,10 +299,9 @@ export function Navigation() {
                 >
                   <Wallet className="w-4 h-4" />
                   {isConnected
-                    ? `Connected ${accounts?.[0]?.slice(
-                        0,
-                        6
-                      )}...${accounts?.[0]?.slice(-4)}`
+                    ? `${accounts?.[0]?.slice(0, 6)}...${accounts?.[0]?.slice(
+                        -4
+                      )}`
                     : "Connect Wallet"}
                 </button>
               </div>

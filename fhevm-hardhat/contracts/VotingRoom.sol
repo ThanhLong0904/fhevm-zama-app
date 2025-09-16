@@ -105,6 +105,77 @@ contract VotingRoom is SepoliaConfig {
         emit RoomCreated(roomCode, msg.sender, title);
     }
 
+    /// @notice Creates a room and adds multiple candidates in one transaction
+    /// @param roomCode Unique room identifier
+    /// @param title Room title
+    /// @param description Room description
+    /// @param maxParticipants Maximum number of participants
+    /// @param endTime Unix timestamp when voting ends
+    /// @param hasPassword Whether the room requires a password
+    /// @param passwordHash Hash of the password (if required)
+    /// @param candidateNames Array of candidate names
+    /// @param candidateDescriptions Array of candidate descriptions
+    /// @param candidateImageUrls Array of candidate image URLs
+    function createRoomWithCandidatesBatch(
+        string memory roomCode,
+        string memory title,
+        string memory description,
+        uint256 maxParticipants,
+        uint256 endTime,
+        bool hasPassword,
+        bytes32 passwordHash,
+        string[] memory candidateNames,
+        string[] memory candidateDescriptions,
+        string[] memory candidateImageUrls
+    ) external {
+        require(bytes(rooms[roomCode].code).length == 0, "Room code already exists");
+        require(endTime > block.timestamp, "End time must be in the future");
+        require(maxParticipants > 0, "Max participants must be greater than 0");
+        require(candidateNames.length == candidateDescriptions.length && candidateNames.length == candidateImageUrls.length, "Arrays length mismatch");
+        require(candidateNames.length >= 2, "At least 2 candidates required");
+
+        // Create the room
+        rooms[roomCode] = Room({
+            code: roomCode,
+            title: title,
+            description: description,
+            creator: msg.sender,
+            maxParticipants: maxParticipants,
+            participantCount: 0,
+            endTime: endTime,
+            hasPassword: hasPassword,
+            passwordHash: passwordHash,
+            isActive: true,
+            candidateCount: 0
+        });
+
+        // Creator automatically becomes a participant
+        isParticipant[roomCode][msg.sender] = true;
+        rooms[roomCode].participantCount = 1;
+
+        // Add all candidates in the same transaction
+        for (uint256 i = 0; i < candidateNames.length; i++) {
+            uint256 candidateId = rooms[roomCode].candidateCount;
+            
+            // Initialize encrypted zero with proper permissions
+            euint32 initialVotes = FHE.asEuint32(0);
+            FHE.allowThis(initialVotes);
+            FHE.allow(initialVotes, msg.sender); // Allow creator to decrypt
+            
+            roomCandidates[roomCode][candidateId] = Candidate({
+                name: candidateNames[i],
+                description: candidateDescriptions[i],
+                imageUrl: candidateImageUrls[i],
+                votes: initialVotes,
+                exists: true
+            });
+
+            rooms[roomCode].candidateCount++;
+        }
+
+        emit RoomCreated(roomCode, msg.sender, title);
+    }
+
     /// @notice Adds a candidate to a room
     /// @param roomCode Room identifier
     /// @param name Candidate name
@@ -135,6 +206,42 @@ contract VotingRoom is SepoliaConfig {
         });
 
         rooms[roomCode].candidateCount++;
+    }
+
+    /// @notice Adds multiple candidates to a room in one transaction
+    /// @param roomCode Room identifier
+    /// @param names Array of candidate names
+    /// @param descriptions Array of candidate descriptions
+    /// @param imageUrls Array of candidate image URLs
+    function addCandidatesBatch(
+        string memory roomCode,
+        string[] memory names,
+        string[] memory descriptions,
+        string[] memory imageUrls
+    ) external roomExists(roomCode) {
+        require(msg.sender == rooms[roomCode].creator, "Only creator can add candidates");
+        require(rooms[roomCode].isActive, "Room is not active");
+        require(names.length == descriptions.length && names.length == imageUrls.length, "Arrays length mismatch");
+        require(names.length > 0, "At least one candidate required");
+
+        for (uint256 i = 0; i < names.length; i++) {
+            uint256 candidateId = rooms[roomCode].candidateCount;
+            
+            // Initialize encrypted zero with proper permissions
+            euint32 initialVotes = FHE.asEuint32(0);
+            FHE.allowThis(initialVotes);
+            FHE.allow(initialVotes, msg.sender); // Allow creator to decrypt
+            
+            roomCandidates[roomCode][candidateId] = Candidate({
+                name: names[i],
+                description: descriptions[i],
+                imageUrl: imageUrls[i],
+                votes: initialVotes,
+                exists: true
+            });
+
+            rooms[roomCode].candidateCount++;
+        }
     }
 
     /// @notice Joins a room (with optional password)

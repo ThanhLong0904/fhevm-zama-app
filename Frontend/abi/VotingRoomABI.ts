@@ -117,6 +117,34 @@ export const VotingRoomABI = {
           "type": "string"
         },
         {
+          "internalType": "string[]",
+          "name": "names",
+          "type": "string[]"
+        },
+        {
+          "internalType": "string[]",
+          "name": "descriptions",
+          "type": "string[]"
+        },
+        {
+          "internalType": "string[]",
+          "name": "imageUrls",
+          "type": "string[]"
+        }
+      ],
+      "name": "addCandidatesBatch",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        },
+        {
           "internalType": "string",
           "name": "title",
           "type": "string"
@@ -148,6 +176,64 @@ export const VotingRoomABI = {
         }
       ],
       "name": "createRoom",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "title",
+          "type": "string"
+        },
+        {
+          "internalType": "string",
+          "name": "description",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "maxParticipants",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "endTime",
+          "type": "uint256"
+        },
+        {
+          "internalType": "bool",
+          "name": "hasPassword",
+          "type": "bool"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "passwordHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "string[]",
+          "name": "candidateNames",
+          "type": "string[]"
+        },
+        {
+          "internalType": "string[]",
+          "name": "candidateDescriptions",
+          "type": "string[]"
+        },
+        {
+          "internalType": "string[]",
+          "name": "candidateImageUrls",
+          "type": "string[]"
+        }
+      ],
+      "name": "createRoomWithCandidatesBatch",
       "outputs": [],
       "stateMutability": "nonpayable",
       "type": "function"

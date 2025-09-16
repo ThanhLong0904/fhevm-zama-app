@@ -9,7 +9,6 @@ import {
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
-import { Alert, AlertDescription } from "./ui/alert";
 import {
   Dialog,
   DialogContent,
@@ -19,7 +18,7 @@ import {
   DialogTitle,
 } from "./ui/dialog";
 import { Label } from "./ui/label";
-import { ImageWithFallback } from "./figma/ImageWithFallback";
+import { ShowError } from "./ui/show-error";
 import {
   Vote,
   Shield,
@@ -29,8 +28,6 @@ import {
   Search,
   Zap,
   Lock,
-  X,
-  AlertCircle,
 } from "lucide-react";
 
 interface HomePageProps {
@@ -94,22 +91,28 @@ export function HomePage({ onNavigate }: HomePageProps) {
 
   const handleJoinRoom = () => {
     const trimmedCode = roomCode.trim().replace("#", ""); // Remove # if present
-    if (trimmedCode) {
-      // Check if room exists
-      if (existingRoomCodes.includes(trimmedCode)) {
-        const room = featuredRooms.find((r) => r.id === trimmedCode);
-        if (room?.hasPassword) {
-          setSelectedRoom(room);
-          setShowPasswordDialog(true);
-        } else {
-          onNavigate("voting", { roomCode: trimmedCode });
-        }
+
+    // Validate input first
+    if (!trimmedCode) {
+      setErrorMessage("You must enter a room code to continue.");
+      setShowError(true);
+      return;
+    }
+
+    // Check if room exists
+    if (existingRoomCodes.includes(trimmedCode)) {
+      const room = featuredRooms.find((r) => r.id === trimmedCode);
+      if (room?.hasPassword) {
+        setSelectedRoom(room);
+        setShowPasswordDialog(true);
       } else {
-        setErrorMessage(
-          `Room "${trimmedCode}" does not exist. Please check the room code and try again.`
-        );
-        setShowError(true);
+        onNavigate("voting", { roomCode: trimmedCode });
       }
+    } else {
+      setErrorMessage(
+        `Room "${trimmedCode}" does not exist. Please check the room code and try again.`
+      );
+      setShowError(true);
     }
   };
 
@@ -147,23 +150,12 @@ export function HomePage({ onNavigate }: HomePageProps) {
 
   return (
     <div className="min-h-screen bg-[#0F0F23]">
-      {/* Error Alert */}
-      {showError && (
-        <div className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-md px-4">
-          <Alert className="bg-red-500/10 border-red-500/30 text-red-400">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="pr-8">{errorMessage}</AlertDescription>
-            <Button
-              onClick={dismissError}
-              variant="ghost"
-              size="sm"
-              className="absolute top-2 right-2 h-6 w-6 p-0 text-red-400 hover:text-red-300"
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </Alert>
-        </div>
-      )}
+      {/* Show Error Component */}
+      <ShowError
+        isVisible={showError}
+        message={errorMessage}
+        onDismiss={dismissError}
+      />
 
       {/* Hero Section */}
       <div className="relative overflow-hidden">
@@ -348,7 +340,6 @@ export function HomePage({ onNavigate }: HomePageProps) {
                     </div>
                     <span className="text-gray-500">{room.endTime}</span>
                   </div>
-
                   <div className="w-full bg-gray-700/50 rounded-full h-2">
                     <div
                       className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"

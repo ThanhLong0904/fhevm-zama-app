@@ -11,6 +11,8 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Switch } from "./ui/switch";
+import { ShowError } from "./ui/show-error";
+import { CustomDatePicker } from "./ui/custom-date-picker";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import {
   ArrowLeft,
@@ -51,10 +53,12 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
   const [copied, setCopied] = useState(false);
   const [hasPassword, setHasPassword] = useState(false);
   const [roomPassword, setRoomPassword] = useState("");
+  const [showError, setShowError] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
   const fileInputRefs = useRef<{ [key: string]: HTMLInputElement | null }>({});
 
   // FHE and Web3 hooks
-   const {
+  const {
     provider,
     chainId,
     ethersSigner,
@@ -62,15 +66,13 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
     initialMockChains,
   } = useMetaMaskEthersSigner();
 
-  const {
-    instance: fhevmInstance,
-  } = useFhevm({
+  const { instance: fhevmInstance } = useFhevm({
     provider,
     chainId,
     initialMockChains,
     enabled: true,
   });
-  
+
   const votingRoom = useVotingRoom({
     instance: fhevmInstance,
     ethersSigner,
@@ -130,48 +132,107 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
   };
 
   const handleCreateRoom = async () => {
-    if (!roomCode || !roomTitle || !maxParticipants || candidates.length < 2) {
+    // Validate all required fields
+    if (!roomCode.trim()) {
+      setErrorMessage("Room code is required.");
+      setShowError(true);
+      return;
+    }
+
+    if (!roomTitle.trim()) {
+      setErrorMessage("Room title is required.");
+      setShowError(true);
+      return;
+    }
+
+    if (!roomDescription.trim()) {
+      setErrorMessage("Room description is required.");
+      setShowError(true);
+      return;
+    }
+
+    if (!maxParticipants.trim()) {
+      setErrorMessage("Maximum participants is required.");
+      setShowError(true);
+      return;
+    }
+
+    const maxParticipantsNum = parseInt(maxParticipants);
+    if (isNaN(maxParticipantsNum) || maxParticipantsNum <= 0) {
+      setErrorMessage("Maximum participants must be a valid positive number.");
+      setShowError(true);
+      return;
+    }
+
+    if (!endTime) {
+      setErrorMessage("End time is required.");
+      setShowError(true);
+      return;
+    }
+
+    // Check if end time is in the future
+    const endDateTime = new Date(endTime);
+    const now = new Date();
+    if (endDateTime <= now) {
+      setErrorMessage("End time must be in the future.");
+      setShowError(true);
+      return;
+    }
+
+    if (candidates.length < 2) {
+      setErrorMessage("At least 2 candidates are required.");
+      setShowError(true);
+      return;
+    }
+
+    // Check if all candidates have names
+    const validCandidates = candidates.filter((c) => c.name.trim());
+    if (validCandidates.length < 2) {
+      setErrorMessage("At least 2 candidates must have names.");
+      setShowError(true);
       return;
     }
 
     if (hasPassword && !roomPassword.trim()) {
+      setErrorMessage(
+        "Password is required when password protection is enabled."
+      );
+      setShowError(true);
       return;
     }
 
     setIsCreating(true);
     try {
       // Calculate end time in hours from now
-      const endHours = endTime ? Math.ceil((new Date(endTime).getTime() - Date.now()) / (1000 * 60 * 60)) : 24;
-      
-      // Create room using VotingRoom contract
-      const success = await votingRoom.createRoom(
+      const endHours = endTime
+        ? Math.ceil(
+            (new Date(endTime).getTime() - Date.now()) / (1000 * 60 * 60)
+          )
+        : 24;
+
+      // Filter valid candidates before creating room
+      const validCandidates = candidates.filter((c) => c.name.trim());
+
+      // Create room with candidates in SINGLE TRANSACTION (1 MetaMask confirmation)
+      const success = await votingRoom.createRoomWithCandidatesBatchSingle(
         roomCode,
         roomTitle,
         roomDescription,
         parseInt(maxParticipants),
         endHours,
+        validCandidates,
         hasPassword,
         roomPassword
       );
 
       if (success) {
-        // Add candidates to the room
-        for (const candidate of candidates.filter((c) => c.name.trim())) {
-          await votingRoom.addCandidate(
-            roomCode,
-            candidate.name,
-            candidate.description,
-            candidate.image
-          );
-        }
-
         const newRoom = {
           code: roomCode,
           title: roomTitle,
           description: roomDescription,
           maxParticipants: parseInt(maxParticipants),
           endTime,
-          candidates: candidates.filter((c) => c.name.trim()),
+          candidates: validCandidates,
           createdAt: new Date(),
           participants: 1, // Creator is automatically a participant
           status: "active",
@@ -195,6 +256,11 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
     navigator.clipboard.writeText(createdRoom?.code || "");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const dismissError = () => {
+    setShowError(false);
+    setErrorMessage("");
   };
 
   if (createdRoom) {
@@ -285,6 +351,13 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
 
   return (
     <div className="min-h-screen bg-[#0F0F23] py-8">
+      {/* Show Error Component */}
+      <ShowError
+        isVisible={showError}
+        message={errorMessage}
+        onDismiss={dismissError}
+      />
+
       <div className="container mx-auto px-4">
         <div className="max-w-4xl mx-auto">
           {/* Header */}
@@ -374,11 +447,10 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
 
                   <div>
                     <Label className="text-gray-300">End Time</Label>
-                    <Input
-                      type="datetime-local"
+                    <CustomDatePicker
                       value={endTime}
-                      onChange={(e) => setEndTime(e.target.value)}
-                      className="bg-gray-700/50 border-gray-600/50 text-white"
+                      onChange={setEndTime}
+                      className="bg-gray-700/50 border-gray-600/50 text-white hover:border-gray-500/50 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
                     />
                   </div>
 
