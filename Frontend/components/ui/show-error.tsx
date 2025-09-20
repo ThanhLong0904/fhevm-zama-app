@@ -8,12 +8,14 @@ import { Button } from "./button";
 interface ShowErrorProps {
   isVisible: boolean;
   message: string;
+  bgColor: string;
   onDismiss: () => void;
   duration?: number; // in seconds, default 8
 }
 
 export function ShowError({
   isVisible,
+  bgColor,
   message,
   onDismiss,
   duration = 8,

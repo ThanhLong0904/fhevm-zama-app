@@ -20,7 +20,6 @@ import {
   X,
   Upload,
   Users,
-  Clock,
   Shield,
   Copy,
   Check,
@@ -28,6 +27,7 @@ import {
 } from "lucide-react";
 import { useVotingRoom } from "@/hooks/useVotingRoom";
 import { useFhevm } from "@/fhevm/useFhevm";
+import { useWalletCheck } from "@/hooks/useWalletCheck";
 import { useMetaMaskEthersSigner } from "@/hooks/metamask/useMetaMaskEthersSigner";
 
 interface Candidate {
@@ -37,8 +37,21 @@ interface Candidate {
   image: string;
 }
 
+interface Room {
+  code: string;
+  title: string;
+  description: string;
+  creator: string;
+  maxParticipants: number;
+  participantCount: number;
+  endTime: number;
+  hasPassword: boolean;
+  isActive: boolean;
+  candidateCount: number;
+}
+
 interface CreateRoomPageProps {
-  onNavigate: (page: string, data?: any) => void;
+  onNavigate: (page: string, data?: { roomCode?: string }) => void;
 }
 
 export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
@@ -49,7 +62,7 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
   const [endTime, setEndTime] = useState("");
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [isCreating, setIsCreating] = useState(false);
-  const [createdRoom, setCreatedRoom] = useState<any>(null);
+  const [createdRoom, setCreatedRoom] = useState<Room | null>(null);
   const [copied, setCopied] = useState(false);
   const [hasPassword, setHasPassword] = useState(false);
   const [roomPassword, setRoomPassword] = useState("");
@@ -72,6 +85,10 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
     initialMockChains,
     enabled: true,
   });
+
+  // Add wallet check hook
+  const { showWalletError, checkWalletConnection, handleWalletErrorDismiss } =
+    useWalletCheck();
 
   const votingRoom = useVotingRoom({
     instance: fhevmInstance,
@@ -132,6 +149,11 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
   };
 
   const handleCreateRoom = async () => {
+    // Check wallet connection first
+    if (!checkWalletConnection()) {
+      return;
+    }
+
     // Validate all required fields
     if (!roomCode.trim()) {
       setErrorMessage("Room code is required.");
@@ -226,27 +248,40 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
       );
 
       if (success) {
-        const newRoom = {
+        const newRoom: Room = {
           code: roomCode,
           title: roomTitle,
           description: roomDescription,
+          creator: "current-user", // This would be actual user address in real app
           maxParticipants: parseInt(maxParticipants),
-          endTime,
-          candidates: validCandidates,
-          createdAt: new Date(),
-          participants: 1, // Creator is automatically a participant
-          status: "active",
+          participantCount: 1, // Creator is automatically a participant
+          endTime: Math.floor(Date.now() / 1000) + parseInt(endTime) * 60 * 60, // Convert hours to timestamp
           hasPassword,
-          password: hasPassword ? roomPassword : null,
+          isActive: true,
+          candidateCount: validCandidates.length,
         };
 
         setCreatedRoom(newRoom);
       } else {
-        // Handle error case
-        console.error("Failed to create room:", votingRoom.message);
+        // Handle error case - show detailed error information
+        const errorMsg =
+          votingRoom.message || "Unknown error occurred while creating room";
+        console.error("Failed to create room:", {
+          error: errorMsg,
+          contractAddress: votingRoom.contractAddress,
+          ethersSigner: !!ethersSigner,
+          fhevmInstance: !!fhevmInstance,
+          chainId,
+        });
+        setErrorMessage(`Failed to create room: ${errorMsg}`);
+        setShowError(true);
       }
     } catch (error) {
       console.error("Error creating room:", error);
+      const errorMsg =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      setErrorMessage(`Error creating room: ${errorMsg}`);
+      setShowError(true);
     } finally {
       setIsCreating(false);
     }
@@ -310,7 +345,7 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
                 <div className="grid grid-cols-2 gap-4 text-center">
                   <div className="bg-gray-700/30 rounded-lg p-3">
                     <div className="text-lg text-blue-400">
-                      {createdRoom.candidates.length}
+                      {createdRoom.candidateCount}
                     </div>
                     <div className="text-sm text-gray-400">Candidates</div>
                   </div>
@@ -356,6 +391,7 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
         isVisible={showError}
         message={errorMessage}
         onDismiss={dismissError}
+        bgColor="bg-red-100"
       />
 
       <div className="container mx-auto px-4">
@@ -392,7 +428,7 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <Label className="text-gray-300">Room Code *</Label>
+                      <Label className="text-gray-300 mb-2">Room Code *</Label>
                       <div className="flex gap-2">
                         <Input
                           value={roomCode}
@@ -412,7 +448,7 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
                       </div>
                     </div>
                     <div>
-                      <Label className="text-gray-300">
+                      <Label className="text-gray-300 mb-2">
                         Max Participants *
                       </Label>
                       <Input
@@ -426,7 +462,7 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
                   </div>
 
                   <div>
-                    <Label className="text-gray-300">Voting Title *</Label>
+                    <Label className="text-gray-300 mb-2">Voting Title *</Label>
                     <Input
                       value={roomTitle}
                       onChange={(e) => setRoomTitle(e.target.value)}
@@ -436,7 +472,7 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
                   </div>
 
                   <div>
-                    <Label className="text-gray-300">Description</Label>
+                    <Label className="text-gray-300 mb-2">Description</Label>
                     <Textarea
                       value={roomDescription}
                       onChange={(e) => setRoomDescription(e.target.value)}
@@ -446,11 +482,11 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
                   </div>
 
                   <div>
-                    <Label className="text-gray-300">End Time</Label>
+                    <Label className="text-gray-300 mb-2">End Time</Label>
                     <CustomDatePicker
                       value={endTime}
                       onChange={setEndTime}
-                      className="bg-gray-700/50 border-gray-600/50 text-white hover:border-gray-500/50 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                      className="bg-gray-700/50 border-gray-600/50 text-white placeholder-gray-500"
                     />
                   </div>
 
@@ -473,7 +509,9 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
 
                     {hasPassword && (
                       <div>
-                        <Label className="text-gray-300">Room Password *</Label>
+                        <Label className="text-gray-300 mb-2">
+                          Room Password *
+                        </Label>
                         <Input
                           type="password"
                           value={roomPassword}
@@ -542,9 +580,10 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
                                 <Upload className="w-4 h-4 text-white" />
                               </div>
                               <input
-                                ref={(el) =>
-                                  (fileInputRefs.current[candidate.id] = el)
-                                }
+                                ref={(el) => {
+                                  if (el)
+                                    fileInputRefs.current[candidate.id] = el;
+                                }}
                                 type="file"
                                 accept="image/*"
                                 onChange={(e) => {
@@ -686,6 +725,15 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
           </div>
         </div>
       </div>
+
+      {/* Wallet Connection Error */}
+      <ShowError
+        isVisible={showWalletError}
+        message="Please connect your MetaMask wallet to continue."
+        onDismiss={handleWalletErrorDismiss}
+        duration={8}
+        bgColor="bg-red-100"
+      />
     </div>
   );
 }

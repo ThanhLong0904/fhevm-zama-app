@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   Card,
   CardContent,
@@ -19,6 +19,10 @@ import {
 } from "./ui/dialog";
 import { Label } from "./ui/label";
 import { ShowError } from "./ui/show-error";
+import { useWalletCheck } from "@/hooks/useWalletCheck";
+import { useVotingRoom } from "@/hooks/useVotingRoom";
+import { useMetaMaskEthersSigner } from "@/hooks/metamask/useMetaMaskEthersSigner";
+import { useFhevm } from "@/fhevm/useFhevm";
 import {
   Vote,
   Shield,
@@ -28,10 +32,26 @@ import {
   Search,
   Zap,
   Lock,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
+import { Progress } from "./ui/progress";
+
+interface Room {
+  code: string;
+  title: string;
+  description: string;
+  creator: string;
+  maxParticipants: number;
+  participantCount: number;
+  endTime: number;
+  hasPassword: boolean;
+  isActive: boolean;
+  candidateCount: number;
+}
 
 interface HomePageProps {
-  onNavigate: (page: string, data?: any) => void;
+  onNavigate: (page: string, data?: { roomCode?: string }) => void;
 }
 
 export function HomePage({ onNavigate }: HomePageProps) {
@@ -39,57 +59,180 @@ export function HomePage({ onNavigate }: HomePageProps) {
   const [showError, setShowError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
-  const [selectedRoom, setSelectedRoom] = useState<any>(null);
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
   const [roomPassword, setRoomPassword] = useState("");
 
-  const featuredRooms = [
-    {
-      id: "ROOM001",
-      title: "Marketing Team Leader Election",
-      description: "Choose the marketing team leader for Q4 2024",
-      participants: 12,
-      maxParticipants: 15,
-      status: "active",
-      endTime: "2 hours left",
-      hasPassword: false,
-    },
-    {
-      id: "ROOM002",
-      title: "Creative Ideas Contest",
-      description: "Vote for the best new product idea",
-      participants: 8,
-      maxParticipants: 20,
-      status: "active",
-      endTime: "1 day left",
-      hasPassword: false,
-    },
-    {
-      id: "ROOM003",
-      title: "Team Building Location",
-      description: "Decide the destination for team building trip",
-      participants: 25,
-      maxParticipants: 25,
-      status: "completed",
-      endTime: "Completed",
-      hasPassword: false,
-    },
-    {
-      id: "ROOM004",
-      title: "Executive Board Selection",
-      description: "Private voting for board member positions",
-      participants: 3,
-      maxParticipants: 8,
-      status: "active",
-      endTime: "5 hours left",
-      hasPassword: true,
-      password: "exec2024",
-    },
-  ];
+  // Featured rooms state
+  const [featuredRooms, setFeaturedRooms] = useState<Room[]>([]);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [isLoadingRooms, setIsLoadingRooms] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(false);
+  const [hasAttemptedLoad, setHasAttemptedLoad] = useState(false);
+  const [loadError, setLoadError] = useState<string>("");
+  const ROOMS_PER_PAGE = 4;
 
-  // Mock existing room codes for validation
-  const existingRoomCodes = ["ROOM001", "ROOM002", "ROOM003", "ROOM004"];
+  // Add wallet check hook
+  const { showWalletError, checkWalletConnection, handleWalletErrorDismiss } =
+    useWalletCheck();
+
+  // FHE and Web3 hooks
+  const {
+    provider,
+    chainId,
+    ethersSigner,
+    ethersReadonlyProvider,
+    initialMockChains,
+  } = useMetaMaskEthersSigner();
+
+  const { instance: fhevmInstance } = useFhevm({
+    provider,
+    chainId,
+    initialMockChains,
+    enabled: true,
+  });
+
+  const votingRoom = useVotingRoom({
+    instance: fhevmInstance,
+    ethersSigner,
+    ethersReadonlyProvider,
+    chainId,
+  });
+
+  // Load featured rooms from blockchain - Tối ưu để tránh infinite loop
+  const loadFeaturedRooms = useCallback(
+    async (shouldPrepend = false) => {
+      if (!votingRoom?.getFeaturedRooms || !ethersSigner) {
+        console.info(
+          "Waiting for wallet connection and contract initialization..."
+        );
+        return;
+      }
+
+      // Chỉ set initial loading nếu chưa có data và chưa từng load
+      const isFirstLoad = !hasAttemptedLoad && featuredRooms.length === 0;
+
+      if (isFirstLoad) {
+        setIsInitialLoading(true);
+      } else {
+        setIsLoadingRooms(true);
+      }
+
+      setHasAttemptedLoad(true);
+      setLoadError(""); // Clear previous errors
+
+      try {
+        const rooms = await votingRoom.getFeaturedRooms(20); // Get up to 20 rooms
+
+        if (shouldPrepend && featuredRooms.length > 0) {
+          // Khi có phòng mới, merge và loại bỏ duplicate
+          const existingCodes = new Set(featuredRooms.map((r) => r.code));
+          const newRooms = (rooms || []).filter(
+            (r) => !existingCodes.has(r.code)
+          );
+          setFeaturedRooms((prev) => [...newRooms, ...prev]);
+        } else {
+          setFeaturedRooms(rooms || []);
+        }
+
+        // Clear any previous error messages if successful
+        setShowError(false);
+        setErrorMessage("");
+      } catch (error) {
+        console.error("Failed to load featured rooms:", error);
+        const errorMsg = "Failed to load featured rooms from blockchain";
+        setLoadError(errorMsg);
+        setErrorMessage(errorMsg);
+        setShowError(true);
+        // Giữ lại data cũ thay vì reset về empty array
+      } finally {
+        setIsLoadingRooms(false);
+        setIsInitialLoading(false);
+      }
+    },
+    [votingRoom, ethersSigner, hasAttemptedLoad, featuredRooms]
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    // Chỉ load khi có signer và voting room, và chưa từng attempt
+    if (ethersSigner && votingRoom && isMounted && !hasAttemptedLoad) {
+      loadFeaturedRooms();
+    }
+
+    // Cleanup function để tránh memory leak
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ethersSigner, votingRoom]); // Loại bỏ loadFeaturedRooms để tránh infinite loop
+
+  // Function để refresh rooms khi cần thiết (ví dụ: sau khi tạo phòng mới)
+  const refreshRoomsWithNewData = useCallback(() => {
+    if (ethersSigner && votingRoom) {
+      loadFeaturedRooms(true); // Prepend new rooms
+    }
+  }, [ethersSigner, votingRoom, loadFeaturedRooms]);
+
+  // Expose refresh function để có thể gọi từ bên ngoài component
+  if (typeof window !== "undefined") {
+    (
+      window as typeof window & { refreshFeaturedRooms?: () => void }
+    ).refreshFeaturedRooms = refreshRoomsWithNewData;
+  }
+
+  // Get current page rooms
+  const getCurrentPageRooms = () => {
+    const startIndex = currentPage * ROOMS_PER_PAGE;
+    return featuredRooms.slice(startIndex, startIndex + ROOMS_PER_PAGE);
+  };
+
+  // Calculate total pages
+  const totalPages = Math.ceil(featuredRooms.length / ROOMS_PER_PAGE);
+
+  // Navigation handlers
+  const handlePreviousPage = useCallback(() => {
+    setCurrentPage((prev) => Math.max(0, prev - 1));
+  }, []);
+
+  const handleNextPage = useCallback(() => {
+    setCurrentPage((prev) => Math.min(totalPages - 1, prev + 1));
+  }, [totalPages]);
+
+  // Create array of existing room codes for validation
+  const existingRoomCodes = featuredRooms.map((room) => room.code);
+
+  // Refresh function for manual retry
+  const refreshRooms = useCallback(() => {
+    if (ethersSigner && votingRoom) {
+      loadFeaturedRooms();
+    }
+  }, [ethersSigner, votingRoom, loadFeaturedRooms]);
+
+  // Keyboard navigation for arrows
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target !== document.body) return; // Only handle when not focused on input
+
+      if (e.key === "ArrowLeft" && currentPage > 0) {
+        e.preventDefault();
+        handlePreviousPage();
+      } else if (e.key === "ArrowRight" && currentPage < totalPages - 1) {
+        e.preventDefault();
+        handleNextPage();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [currentPage, totalPages, handlePreviousPage, handleNextPage]);
 
   const handleJoinRoom = () => {
+    // Check wallet connection first
+    if (!checkWalletConnection()) {
+      return;
+    }
+
     const trimmedCode = roomCode.trim().replace("#", ""); // Remove # if present
 
     // Validate input first
@@ -101,7 +244,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
 
     // Check if room exists
     if (existingRoomCodes.includes(trimmedCode)) {
-      const room = featuredRooms.find((r) => r.id === trimmedCode);
+      const room = featuredRooms.find((r) => r.code === trimmedCode);
       if (room?.hasPassword) {
         setSelectedRoom(room);
         setShowPasswordDialog(true);
@@ -116,20 +259,26 @@ export function HomePage({ onNavigate }: HomePageProps) {
     }
   };
 
-  const handleRoomCardClick = (room: any) => {
-    if (room.hasPassword && room.status === "active") {
+  const handleRoomCardClick = (room: Room) => {
+    // Check wallet connection first
+    if (!checkWalletConnection()) {
+      return;
+    }
+
+    if (room.hasPassword && room.isActive) {
       setSelectedRoom(room);
       setShowPasswordDialog(true);
     } else {
-      onNavigate("voting", { roomCode: room.id });
+      onNavigate("voting", { roomCode: room.code });
     }
   };
 
   const handlePasswordSubmit = () => {
-    if (selectedRoom && roomPassword === selectedRoom.password) {
+    // For now, accept any password (in real app, validate against room password)
+    if (selectedRoom && roomPassword.trim()) {
       setShowPasswordDialog(false);
       setRoomPassword("");
-      onNavigate("voting", { roomCode: selectedRoom.id });
+      onNavigate("voting", { roomCode: selectedRoom.code });
     } else {
       setErrorMessage("Incorrect password. Please try again.");
       setShowError(true);
@@ -155,6 +304,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
         isVisible={showError}
         message={errorMessage}
         onDismiss={dismissError}
+        bgColor="bg-red-100"
       />
 
       {/* Hero Section */}
@@ -189,7 +339,11 @@ export function HomePage({ onNavigate }: HomePageProps) {
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center items-center mt-8">
               <Button
-                onClick={() => onNavigate("create")}
+                onClick={() => {
+                  if (checkWalletConnection()) {
+                    onNavigate("create");
+                  }
+                }}
                 className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-lg transition-all duration-300 hover:scale-105 hover:shadow-xl flex items-center gap-2"
               >
                 <Plus className="w-5 h-5" />
@@ -278,96 +432,229 @@ export function HomePage({ onNavigate }: HomePageProps) {
       <div className="container mx-auto px-4 py-16">
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h2 className="text-3xl text-white mb-2">Featured Voting Rooms</h2>
+            <h2 className="text-3xl text-white mb-2 flex items-center gap-3">
+              Featured Voting Rooms
+              {isLoadingRooms && featuredRooms.length > 0 && (
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-500"></div>
+              )}
+            </h2>
             <p className="text-gray-400">Join ongoing voting sessions</p>
           </div>
+
+          {/* Page indicator - only show if multiple pages */}
+          {totalPages > 1 && (
+            <div className="hidden sm:flex items-center gap-2 text-gray-400 text-sm">
+              <span>
+                Page {currentPage + 1} of {totalPages}
+              </span>
+            </div>
+          )}
         </div>
 
-        <div className="grid lg:grid-cols-4 gap-6">
-          {featuredRooms.map((room, index) => (
-            <Card
-              key={room.id}
-              className="bg-gray-800/50 border-gray-700/50 hover:bg-gray-700/50 hover:border-gray-600/50 transition-all duration-300 hover:-translate-y-1 cursor-pointer"
-            >
-              <CardHeader>
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2">
-                    <Badge
-                      variant={
-                        room.status === "active"
-                          ? "default"
-                          : room.status === "completed"
-                          ? "secondary"
-                          : "outline"
-                      }
-                      className={
-                        room.status === "active"
-                          ? "bg-green-500/20 text-green-400 border-green-500/30"
-                          : room.status === "completed"
-                          ? "bg-gray-500/20 text-gray-400 border-gray-500/30"
-                          : ""
-                      }
-                    >
-                      {room.status === "active" ? "Active" : "Completed"}
-                    </Badge>
-                    {room.hasPassword && (
-                      <Badge
+        {/* Rooms Grid with Navigation Arrows */}
+        <div className="relative">
+          {/* Navigation Arrows */}
+          {totalPages > 1 && (
+            <>
+              {/* Previous Arrow */}
+              <button
+                onClick={handlePreviousPage}
+                disabled={currentPage === 0}
+                aria-label="Previous slide"
+                className={`
+                  absolute left-0 top-1/2 -translate-y-1/2 z-20
+                  w-11 h-11 sm:w-12 sm:h-12 rounded-full
+                  bg-black/55 backdrop-blur-sm
+                  flex items-center justify-center
+                  transition-all duration-200 ease-out
+                  hover:bg-black/75 hover:scale-105
+                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900
+                  active:scale-95 active:transition-transform active:duration-75
+                  disabled:opacity-35 disabled:pointer-events-none
+                  -ml-6 group
+                `}
+                style={{ marginLeft: "-1.5rem" }}
+              >
+                <ChevronLeft className="w-5 h-5 text-white/85 transition-colors duration-200 group-hover:text-white stroke-2" />
+              </button>
+
+              {/* Next Arrow */}
+              <button
+                onClick={handleNextPage}
+                disabled={currentPage >= totalPages - 1}
+                aria-label="Next slide"
+                className={`
+                  absolute right-0 top-1/2 -translate-y-1/2 z-20
+                  w-11 h-11 sm:w-12 sm:h-12 rounded-full
+                  bg-black/55 backdrop-blur-sm
+                  flex items-center justify-center
+                  transition-all duration-200 ease-out
+                  hover:bg-black/75 hover:scale-105
+                  focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900
+                  active:scale-95 active:transition-transform active:duration-75
+                  disabled:opacity-35 disabled:pointer-events-none
+                  -mr-6 group
+                `}
+                style={{ marginRight: "-1.5rem" }}
+              >
+                <ChevronRight className="w-5 h-5 text-white/85 transition-colors duration-200 group-hover:text-white stroke-2" />
+              </button>
+            </>
+          )}
+
+          <div className="grid lg:grid-cols-4 gap-6">
+            {(() => {
+              // Logic render được gom lại để tránh nhấp nháy UI
+
+              // Case 1: Initial loading (lần đầu load, chưa có data)
+              if (
+                isInitialLoading ||
+                (isLoadingRooms &&
+                  featuredRooms.length === 0 &&
+                  !hasAttemptedLoad)
+              ) {
+                return Array.from({ length: 4 }).map((_, index) => (
+                  <Card
+                    key={index}
+                    className="bg-gray-800/50 border-gray-700/50"
+                  >
+                    <CardHeader>
+                      <div className="animate-pulse">
+                        <div className="h-4 bg-gray-700 rounded w-3/4 mb-2"></div>
+                        <div className="h-3 bg-gray-700 rounded w-1/2"></div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="animate-pulse space-y-3">
+                        <div className="h-3 bg-gray-700 rounded"></div>
+                        <div className="h-3 bg-gray-700 rounded w-5/6"></div>
+                        <div className="h-8 bg-gray-700 rounded"></div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ));
+              }
+
+              // Case 2: Chưa kết nối ví
+              if (!ethersSigner || !hasAttemptedLoad) {
+                return (
+                  <div className="col-span-4 text-center py-12">
+                    <p className="text-gray-400 text-lg">
+                      Connect your wallet to view voting rooms.
+                    </p>
+                  </div>
+                );
+              }
+
+              // Case 3: Đã load xong nhưng không có phòng (hoặc có lỗi nhưng không có data cũ)
+              if (hasAttemptedLoad && featuredRooms.length === 0) {
+                return (
+                  <div className="col-span-4 text-center py-12">
+                    <p className="text-gray-400 text-lg">
+                      {loadError
+                        ? "Failed to load rooms. Please try again."
+                        : "No voting rooms available at the moment."}
+                    </p>
+                    <p className="text-gray-500 text-sm mt-2">
+                      {loadError
+                        ? "Check your connection and refresh the page."
+                        : "Check back later or create your own room!"}
+                    </p>
+                    {loadError && (
+                      <Button
+                        onClick={() => refreshRooms()}
                         variant="outline"
-                        className="border-yellow-600/50 text-yellow-400"
+                        className="mt-4 border-gray-600 text-gray-300 hover:bg-gray-700"
+                        disabled={isLoadingRooms}
                       >
-                        <Lock className="w-3 h-3 mr-1" />
-                        Protected
-                      </Badge>
+                        {isLoadingRooms ? "Retrying..." : "Retry"}
+                      </Button>
                     )}
                   </div>
-                  <span className="text-xs text-gray-500">#{room.id}</span>
-                </div>
-                <CardTitle className="text-white hover:text-blue-400 transition-colors">
-                  {room.title}
-                </CardTitle>
-                <CardDescription className="text-gray-400">
-                  {room.description}
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <div className="flex items-center gap-2 text-gray-400">
-                      <Users className="w-4 h-4" />
-                      <span>
-                        {room.participants}/{room.maxParticipants} people
+                );
+              }
+
+              // Case 4: Có data để hiển thị
+              return getCurrentPageRooms().map((room) => (
+                <Card
+                  key={room.code}
+                  className="bg-gray-800/50 border-gray-700/50 hover:bg-gray-700/50 hover:border-gray-600/50 transition-all duration-300 hover:-translate-y-1 cursor-pointer"
+                >
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={room.isActive ? "default" : "secondary"}
+                          className={
+                            room.isActive
+                              ? "bg-green-500/20 text-green-400 border-green-500/30"
+                              : "bg-gray-500/20 text-gray-400 border-gray-500/30"
+                          }
+                        >
+                          {room.isActive ? "Active" : "Ended"}
+                        </Badge>
+                        {room.hasPassword && (
+                          <Badge
+                            variant="outline"
+                            className="border-yellow-600/50 text-yellow-400"
+                          >
+                            <Lock className="w-3 h-3 mr-1" />
+                            Protected
+                          </Badge>
+                        )}
+                      </div>
+                      <span className="text-xs text-gray-500">
+                        #{room.code}
                       </span>
                     </div>
-                    <span className="text-gray-500">{room.endTime}</span>
-                  </div>
-                  <div className="w-full bg-gray-700/50 rounded-full h-2">
-                    <div
-                      className="bg-gradient-to-r from-blue-500 to-purple-500 h-2 rounded-full transition-all duration-300"
-                      style={{
-                        width: `${
-                          (room.participants / room.maxParticipants) * 100
-                        }%`,
-                      }}
-                    ></div>
-                  </div>
-
-                  <Button
-                    onClick={() => handleRoomCardClick(room)}
-                    variant="ghost"
-                    className="w-full text-gray-300 hover:text-white hover:bg-blue-500/10 transition-all duration-200 flex items-center justify-between"
-                    disabled={room.status === "completed"}
-                  >
-                    {room.status === "active"
-                      ? room.hasPassword
-                        ? "Join with Password"
-                        : "Join Voting"
-                      : "View Results"}
-                    <ArrowRight className="w-4 h-4" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                    <CardTitle className="text-white hover:text-blue-400 transition-colors">
+                      {room.title}
+                    </CardTitle>
+                    <CardDescription className="text-gray-400">
+                      {room.description}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      <div className="flex items-center justify-between text-sm">
+                        <div className="flex items-center gap-2 text-gray-400">
+                          <Users className="w-4 h-4" />
+                          <span>
+                            {room.participantCount}/{room.maxParticipants}{" "}
+                            people
+                          </span>
+                        </div>
+                        <span className="text-gray-500">
+                          {new Date(room.endTime * 1000).toLocaleDateString()}
+                        </span>
+                      </div>
+                      <div className="w-full bg-gray-700/50 rounded-full h-2">
+                        <Progress
+                          value={
+                            (room.participantCount / room.maxParticipants) * 100
+                          }
+                          className="h-2"
+                        />
+                      </div>
+                      <Button
+                        onClick={() => handleRoomCardClick(room)}
+                        variant="ghost"
+                        className="w-full text-gray-300 hover:text-white hover:bg-blue-500/10 transition-all duration-200 flex items-center justify-between"
+                        disabled={!room.isActive}
+                      >
+                        {room.isActive
+                          ? room.hasPassword
+                            ? "Join with Password"
+                            : "Join Voting"
+                          : "View Results"}
+                        <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ));
+            })()}
+          </div>
         </div>
       </div>
 
@@ -405,12 +692,12 @@ export function HomePage({ onNavigate }: HomePageProps) {
             </DialogTitle>
             <DialogDescription className="text-gray-400">
               This room is password protected. Please enter the password to join
-              "{selectedRoom?.title}".
+              &ldquo;{selectedRoom?.title}&rdquo;.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label className="text-gray-300">Room Password</Label>
+              <Label className="text-gray-300 mb-2">Room Password</Label>
               <Input
                 type="password"
                 value={roomPassword}
@@ -438,6 +725,20 @@ export function HomePage({ onNavigate }: HomePageProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Wallet Connection Error */}
+      <ShowError
+        isVisible={showWalletError}
+        message="Please connect your MetaMask wallet to continue."
+        onDismiss={handleWalletErrorDismiss}
+        duration={8}
+        bgColor="blue"
+      />
     </div>
   );
 }
+
+// Export function để refresh rooms sau khi tạo phòng mới (để sử dụng từ CreateRoomPage)
+export const refreshRoomsAfterCreate = (loadFn: () => void) => {
+  loadFn();
+};

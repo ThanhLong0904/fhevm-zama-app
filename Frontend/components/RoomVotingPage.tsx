@@ -1,11 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "./ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
@@ -15,13 +9,11 @@ import {
   ArrowLeft,
   Vote,
   Users,
-  Clock,
   Shield,
   Trophy,
   Copy,
   Check,
   Eye,
-  EyeOff,
 } from "lucide-react";
 import { useVotingRoom } from "@/hooks/useVotingRoom";
 import { useFhevm } from "@/fhevm/useFhevm";
@@ -36,13 +28,26 @@ interface Candidate {
   percentage: number;
 }
 
+interface Room {
+  code: string;
+  title: string;
+  description: string;
+  creator: string;
+  maxParticipants: number;
+  participantCount: number;
+  endTime: number;
+  hasPassword: boolean;
+  isActive: boolean;
+  candidateCount: number;
+}
+
 interface RoomVotingPageProps {
-  onNavigate: (page: string, data?: any) => void;
+  onNavigate: (page: string, data?: { roomCode?: string }) => void;
   roomCode?: string;
 }
 
 export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
-  const [room, setRoom] = useState<any>(null);
+  const [room, setRoom] = useState<Room | null>(null);
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [selectedCandidate, setSelectedCandidate] = useState<string | null>(
     null
@@ -95,11 +100,13 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
             code: roomInfo.code,
             title: roomInfo.title,
             description: roomInfo.description,
+            creator: roomInfo.creator,
             maxParticipants: roomInfo.maxParticipants,
-            participants: roomInfo.participantCount,
-            status: roomInfo.isActive ? "active" : "ended",
-            endTime: new Date(roomInfo.endTime * 1000),
-            createdAt: new Date(),
+            participantCount: roomInfo.participantCount,
+            endTime: roomInfo.endTime,
+            hasPassword: roomInfo.hasPassword,
+            isActive: roomInfo.isActive,
+            candidateCount: roomInfo.candidateCount,
           });
           setCurrentParticipants(roomInfo.participantCount);
         }
@@ -273,6 +280,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         isVisible={showError}
         message={errorMessage}
         onDismiss={dismissError}
+        bgColor="bg-red-100"
       />
 
       <div className="container mx-auto px-4">
@@ -296,7 +304,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
 
             <div className="flex items-center gap-2">
               <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                {room.status === "active" ? "Active" : "Ended"}
+                {room.isActive ? "Active" : "Ended"}
               </Badge>
             </div>
           </div>
@@ -670,9 +678,11 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                     <span className="text-white">Admin</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-gray-400">Created at:</span>
+                    <span className="text-gray-400">End Time:</span>
                     <span className="text-white">
-                      {room.createdAt.toLocaleDateString("vi-VN")}
+                      {new Date(room.endTime * 1000).toLocaleDateString(
+                        "vi-VN"
+                      )}
                     </span>
                   </div>
                   <div className="flex justify-between">

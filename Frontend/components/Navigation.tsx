@@ -14,6 +14,8 @@ import {
   Check,
 } from "lucide-react";
 import { useMetaMaskEthersSigner } from "../hooks/metamask/useMetaMaskEthersSigner";
+import { useWalletCheck } from "@/hooks/useWalletCheck";
+import { ShowError } from "./ui/show-error";
 import { Button } from "./ui/button";
 
 export function Navigation() {
@@ -97,7 +99,14 @@ export function Navigation() {
     setIsWalletDropdownOpen(false);
   };
 
+  // Wallet check hook
+  const { showWalletError, checkWalletConnection, handleWalletErrorDismiss } =
+    useWalletCheck();
+
   const handleNavigate = (page: string) => {
+    if (!checkWalletConnection()) {
+      return;
+    }
     router.push(page);
     setIsMenuOpen(false);
   };
@@ -309,6 +318,14 @@ export function Navigation() {
           </div>
         )}
       </div>
+      {/* Wallet Connection Error */}
+      <ShowError
+        isVisible={showWalletError}
+        message="Please connect your MetaMask wallet to continue."
+        onDismiss={handleWalletErrorDismiss}
+        duration={8}
+        bgColor="bg-red-100"
+      />
     </nav>
   );
 }

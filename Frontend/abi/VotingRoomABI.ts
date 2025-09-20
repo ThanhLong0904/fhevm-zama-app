@@ -252,6 +252,32 @@ export const VotingRoomABI = {
       "type": "function"
     },
     {
+      "inputs": [],
+      "name": "getActiveRooms",
+      "outputs": [
+        {
+          "internalType": "string[]",
+          "name": "",
+          "type": "string[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getAllRoomCodes",
+      "outputs": [
+        {
+          "internalType": "string[]",
+          "name": "",
+          "type": "string[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [
         {
           "internalType": "string",
@@ -388,6 +414,48 @@ export const VotingRoomABI = {
     {
       "inputs": [
         {
+          "internalType": "uint256",
+          "name": "offset",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "limit",
+          "type": "uint256"
+        }
+      ],
+      "name": "getRoomsPaginated",
+      "outputs": [
+        {
+          "internalType": "string[]",
+          "name": "",
+          "type": "string[]"
+        },
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "getTotalRoomsCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
           "internalType": "string",
           "name": "roomCode",
           "type": "string"
@@ -413,12 +481,12 @@ export const VotingRoomABI = {
       "inputs": [
         {
           "internalType": "string",
-          "name": "",
+          "name": "roomCode",
           "type": "string"
         },
         {
           "internalType": "address",
-          "name": "",
+          "name": "voter",
           "type": "address"
         }
       ],
@@ -426,7 +494,7 @@ export const VotingRoomABI = {
       "outputs": [
         {
           "internalType": "bool",
-          "name": "",
+          "name": "voted",
           "type": "bool"
         }
       ],
@@ -437,12 +505,12 @@ export const VotingRoomABI = {
       "inputs": [
         {
           "internalType": "string",
-          "name": "",
+          "name": "roomCode",
           "type": "string"
         },
         {
           "internalType": "address",
-          "name": "",
+          "name": "user",
           "type": "address"
         }
       ],
@@ -450,7 +518,7 @@ export const VotingRoomABI = {
       "outputs": [
         {
           "internalType": "bool",
-          "name": "",
+          "name": "participant",
           "type": "bool"
         }
       ],
@@ -503,12 +571,12 @@ export const VotingRoomABI = {
       "inputs": [
         {
           "internalType": "string",
-          "name": "",
+          "name": "roomCode",
           "type": "string"
         },
         {
           "internalType": "uint256",
-          "name": "",
+          "name": "candidateId",
           "type": "uint256"
         }
       ],
@@ -547,7 +615,45 @@ export const VotingRoomABI = {
       "inputs": [
         {
           "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        }
+      ],
+      "name": "roomCodeIndex",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "index",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
           "name": "",
+          "type": "uint256"
+        }
+      ],
+      "name": "roomCodes",
+      "outputs": [
+        {
+          "internalType": "string",
+          "name": "",
+          "type": "string"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
           "type": "string"
         }
       ],

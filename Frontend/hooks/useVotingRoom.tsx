@@ -39,8 +39,8 @@ export const useVotingRoom = (parameters: {
 
   // Contract address - should be loaded from deployments
   const votingRoomAddress = useMemo(() => {
-    // Deployed address on localhost (updated with createRoomWithCandidatesBatch)
-    return "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
+    // Updated address from latest deployment
+    return "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
   }, []);
 
   // Contract ABI imported from generated files
@@ -48,12 +48,23 @@ export const useVotingRoom = (parameters: {
 
   // Get contract instance
   const getContract = useCallback(() => {
-    if (!ethersSigner || !votingRoomAddress) return null;
-    return new ethers.Contract(
-      votingRoomAddress,
-      contractABI.abi,
-      ethersSigner
-    );
+    if (!ethersSigner || !votingRoomAddress) {
+      console.error("Contract initialization failed:", {
+        ethersSigner: !!ethersSigner,
+        votingRoomAddress,
+      });
+      return null;
+    }
+    try {
+      return new ethers.Contract(
+        votingRoomAddress,
+        contractABI.abi,
+        ethersSigner
+      );
+    } catch (error) {
+      console.error("Error creating contract instance:", error);
+      return null;
+    }
   }, [ethersSigner, votingRoomAddress, contractABI]);
 
   const getReadOnlyContract = useCallback(() => {
@@ -223,7 +234,17 @@ export const useVotingRoom = (parameters: {
     ) => {
       const contract = getContract();
       if (!contract) {
-        setMessage("Contract or signer not available");
+        const errorMsg = !ethersSigner
+          ? "MetaMask wallet not connected"
+          : !votingRoomAddress
+          ? "Contract address not available"
+          : "Contract initialization failed";
+        setMessage(errorMsg);
+        console.error("Contract not available:", {
+          ethersSigner: !!ethersSigner,
+          votingRoomAddress,
+          chainId: parameters.chainId,
+        });
         return false;
       }
 
@@ -231,17 +252,17 @@ export const useVotingRoom = (parameters: {
       setMessage("Creating room with candidates in single transaction...");
 
       try {
-        const endTime = Math.floor(Date.now() / 1000) + (endHours * 60 * 60);
+        const endTime = Math.floor(Date.now() / 1000) + endHours * 60 * 60;
         let passwordHash = ethers.ZeroHash;
-        
+
         if (hasPassword && password) {
           passwordHash = ethers.keccak256(ethers.toUtf8Bytes(password));
         }
 
         // Extract arrays for batch creation
-        const names = candidates.map(c => c.name);
-        const descriptions = candidates.map(c => c.description);
-        const images = candidates.map(c => c.image);
+        const names = candidates.map((c) => c.name);
+        const descriptions = candidates.map((c) => c.description);
+        const images = candidates.map((c) => c.image);
 
         // Create room and add all candidates in SINGLE TRANSACTION
         const tx = await contract.createRoomWithCandidatesBatch(
@@ -259,23 +280,26 @@ export const useVotingRoom = (parameters: {
 
         setMessage(`Creating everything in one transaction ${tx.hash}...`);
         const receipt = await tx.wait();
-        
+
         if (receipt?.status === 1) {
-          setMessage("Room and candidates created successfully in one transaction!");
+          setMessage(
+            "Room and candidates created successfully in one transaction!"
+          );
           return true;
         } else {
           setMessage("Room creation failed");
           return false;
         }
       } catch (error: unknown) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
         setMessage(`Error creating room: ${errorMessage}`);
         return false;
       } finally {
         setIsLoading(false);
       }
     },
-    [getContract]
+    [getContract, ethersSigner, votingRoomAddress, parameters.chainId]
   );
 
   // Add Candidate
@@ -559,6 +583,166 @@ export const useVotingRoom = (parameters: {
     [getReadOnlyContract, ethersSigner]
   );
 
+  // Get total rooms count
+  const getTotalRoomsCount = useCallback(async (): Promise<number> => {
+    try {
+      const contract = getReadOnlyContract();
+      if (!contract) {
+        throw new Error("Contract not available");
+      }
+
+      const count = await contract.getTotalRoomsCount();
+      return Number(count);
+    } catch (error) {
+      console.error("Error getting total rooms count:", error);
+      setMessage("Failed to get total rooms count");
+      return 0;
+    }
+  }, [getReadOnlyContract]);
+
+  // Get all room codes
+  const getAllRoomCodes = useCallback(async (): Promise<string[]> => {
+    try {
+      const contract = getReadOnlyContract();
+      if (!contract) {
+        throw new Error("Contract not available");
+      }
+
+      const roomCodes = await contract.getAllRoomCodes();
+      return roomCodes;
+    } catch (error) {
+      console.error("Error getting all room codes:", error);
+      setMessage("Failed to get all room codes");
+      return [];
+    }
+  }, [getReadOnlyContract]);
+
+  // Get active rooms
+  const getActiveRooms = useCallback(async (): Promise<string[]> => {
+    try {
+      const contract = getReadOnlyContract();
+      if (!contract) {
+        throw new Error("Contract not available");
+      }
+
+      const activeRooms = await contract.getActiveRooms();
+      return activeRooms;
+    } catch (error) {
+      console.error("Error getting active rooms:", error);
+      setMessage("Failed to get active rooms");
+      return [];
+    }
+  }, [getReadOnlyContract]);
+
+  // Get paginated rooms
+  const getRoomsPaginated = useCallback(
+    async (
+      offset: number = 0,
+      limit: number = 10
+    ): Promise<{ roomCodes: string[]; hasMore: boolean }> => {
+      try {
+        const contract = getReadOnlyContract();
+        if (!contract) {
+          throw new Error("Contract not available");
+        }
+
+        const [roomCodes, hasMore] = await contract.getRoomsPaginated(
+          offset,
+          limit
+        );
+        return { roomCodes, hasMore };
+      } catch (error) {
+        console.error("Error getting paginated rooms:", error);
+        setMessage("Failed to get paginated rooms");
+        return { roomCodes: [], hasMore: false };
+      }
+    },
+    [getReadOnlyContract]
+  );
+
+  // Get featured rooms (active rooms with metadata)
+  const getFeaturedRooms = useCallback(
+    async (limit: number = 6): Promise<Room[]> => {
+      try {
+        setIsLoading(true);
+        const contract = getReadOnlyContract();
+        if (!contract) {
+          console.warn("Contract not available, returning empty rooms array");
+          setMessage("Waiting for blockchain connection...");
+          return [];
+        }
+
+        // Get active room codes - handle empty result gracefully
+        let activeRoomCodes: string[] = [];
+        try {
+          const result = await contract.getActiveRooms();
+          activeRoomCodes = Array.isArray(result) ? result : [];
+        } catch (contractError: unknown) {
+          const errorMessage =
+            contractError instanceof Error
+              ? contractError.message
+              : "Unknown contract error";
+          console.warn(
+            "Failed to fetch active rooms from contract:",
+            errorMessage
+          );
+          // If contract call fails, return empty array instead of throwing
+          const error = contractError as { code?: string; reason?: string }; // Type assertion for error checking
+          if (error?.code === "BAD_DATA" || error?.reason?.includes("decode")) {
+            console.info(
+              "Contract might not have any rooms yet or contract not properly deployed"
+            );
+            setMessage("No active rooms found on blockchain");
+            return [];
+          }
+          throw contractError; // Re-throw other unexpected errors
+        }
+
+        // If no active rooms, return empty array
+        if (!activeRoomCodes || activeRoomCodes.length === 0) {
+          setMessage("No active rooms available");
+          return [];
+        }
+
+        // Limit to specified amount
+        const limitedRoomCodes = activeRoomCodes.slice(0, limit);
+
+        // Get full room information for each
+        const featuredRooms: Room[] = [];
+
+        for (const roomCode of limitedRoomCodes) {
+          try {
+            const room = await contract.getRoom(roomCode);
+            featuredRooms.push({
+              code: room.code,
+              title: room.title,
+              description: room.description,
+              creator: room.creator,
+              maxParticipants: Number(room.maxParticipants),
+              participantCount: Number(room.participantCount),
+              endTime: Number(room.endTime),
+              hasPassword: room.hasPassword,
+              isActive: room.isActive,
+              candidateCount: Number(room.candidateCount),
+            });
+          } catch (roomError) {
+            console.error(`Error getting room ${roomCode}:`, roomError);
+            // Continue with other rooms
+          }
+        }
+
+        return featuredRooms;
+      } catch (error) {
+        console.error("Error getting featured rooms:", error);
+        setMessage("Failed to get featured rooms");
+        return [];
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [getReadOnlyContract]
+  );
+
   return {
     // State
     isLoading,
@@ -575,6 +759,13 @@ export const useVotingRoom = (parameters: {
     getRoomInfo,
     getCandidates,
     checkVotingStatus,
+
+    // Room enumeration
+    getTotalRoomsCount,
+    getAllRoomCodes,
+    getActiveRooms,
+    getRoomsPaginated,
+    getFeaturedRooms,
 
     // Utils
     setMessage,
