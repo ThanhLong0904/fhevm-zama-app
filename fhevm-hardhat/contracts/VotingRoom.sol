@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {FHE, euint32, externalEuint32, ebool} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint32, externalEuint32} from "@fhevm/solidity/lib/FHE.sol";
 import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 
 /// @title FHE-based Private Voting Room
@@ -31,10 +31,12 @@ contract VotingRoom is SepoliaConfig {
     }
 
     // Room management
-    mapping(string => Room) public rooms;
-    mapping(string => mapping(uint256 => Candidate)) public roomCandidates;
-    mapping(string => mapping(address => bool)) public hasVoted;
-    mapping(string => mapping(address => bool)) public isParticipant;
+    mapping(string roomCode => Room roomData) public rooms;
+    mapping(string roomCode => mapping(uint256 candidateId => Candidate candidate)) public roomCandidates;
+    mapping(string roomCode => mapping(address voter => bool voted)) public hasVoted;
+    mapping(string roomCode => mapping(address user => bool participant)) public isParticipant;
+    string[] public roomCodes; // Array to track all room codes
+    mapping(string roomCode => uint256 index) public roomCodeIndex; // Index of room code in array
     
     // Events
     event RoomCreated(string indexed roomCode, address indexed creator, string title);
@@ -82,7 +84,7 @@ contract VotingRoom is SepoliaConfig {
     ) external {
         require(bytes(rooms[roomCode].code).length == 0, "Room code already exists");
         require(endTime > block.timestamp, "End time must be in the future");
-        require(maxParticipants > 0, "Max participants must be greater than 0");
+        require(maxParticipants > 0, "Max participants must be > 0");
 
         rooms[roomCode] = Room({
             code: roomCode,
@@ -97,6 +99,10 @@ contract VotingRoom is SepoliaConfig {
             isActive: true,
             candidateCount: 0
         });
+
+        // Add room code to array
+        roomCodes.push(roomCode);
+        roomCodeIndex[roomCode] = roomCodes.length - 1;
 
         // Creator automatically becomes a participant
         isParticipant[roomCode][msg.sender] = true;
@@ -130,8 +136,12 @@ contract VotingRoom is SepoliaConfig {
     ) external {
         require(bytes(rooms[roomCode].code).length == 0, "Room code already exists");
         require(endTime > block.timestamp, "End time must be in the future");
-        require(maxParticipants > 0, "Max participants must be greater than 0");
-        require(candidateNames.length == candidateDescriptions.length && candidateNames.length == candidateImageUrls.length, "Arrays length mismatch");
+        require(maxParticipants > 0, "Max participants must be > 0");
+        require(
+            candidateNames.length == candidateDescriptions.length && 
+            candidateNames.length == candidateImageUrls.length, 
+            "Arrays length mismatch"
+        );
         require(candidateNames.length >= 2, "At least 2 candidates required");
 
         // Create the room
@@ -148,6 +158,10 @@ contract VotingRoom is SepoliaConfig {
             isActive: true,
             candidateCount: 0
         });
+
+        // Add room code to array
+        roomCodes.push(roomCode);
+        roomCodeIndex[roomCode] = roomCodes.length - 1;
 
         // Creator automatically becomes a participant
         isParticipant[roomCode][msg.sender] = true;
@@ -383,5 +397,75 @@ contract VotingRoom is SepoliaConfig {
         returns (bool) 
     {
         return isParticipant[roomCode][user];
+    }
+
+    /// @notice Gets the total number of rooms
+    /// @return Total number of rooms created
+    function getTotalRoomsCount() external view returns (uint256) {
+        return roomCodes.length;
+    }
+
+    /// @notice Gets all room codes
+    /// @return Array of all room codes
+    function getAllRoomCodes() external view returns (string[] memory) {
+        return roomCodes;
+    }
+
+    /// @notice Gets all active rooms
+    /// @return Array of active room codes
+    function getActiveRooms() external view returns (string[] memory) {
+        uint256 activeCount = 0;
+        
+        // Count active rooms
+        for (uint256 i = 0; i < roomCodes.length; i++) {
+            if (rooms[roomCodes[i]].isActive && rooms[roomCodes[i]].endTime > block.timestamp) {
+                activeCount++;
+            }
+        }
+        
+        // Create array of active room codes
+        string[] memory activeRooms = new string[](activeCount);
+        uint256 currentIndex = 0;
+        
+        for (uint256 i = 0; i < roomCodes.length; i++) {
+            if (rooms[roomCodes[i]].isActive && rooms[roomCodes[i]].endTime > block.timestamp) {
+                activeRooms[currentIndex] = roomCodes[i];
+                currentIndex++;
+            }
+        }
+        
+        return activeRooms;
+    }
+
+    /// @notice Gets paginated rooms (active and recently ended)
+    /// @param offset Starting index
+    /// @param limit Maximum number of rooms to return
+    /// @return roomCodes Array of room codes
+    /// @return hasMore Whether there are more rooms available
+    function getRoomsPaginated(uint256 offset, uint256 limit) 
+        external 
+        view 
+        returns (string[] memory, bool) 
+    {
+        require(limit > 0, "Limit must be greater than 0");
+        
+        uint256 totalRooms = roomCodes.length;
+        
+        if (offset >= totalRooms) {
+            return (new string[](0), false);
+        }
+        
+        uint256 remainingRooms = totalRooms - offset;
+        uint256 returnCount = remainingRooms > limit ? limit : remainingRooms;
+        
+        string[] memory paginatedRooms = new string[](returnCount);
+        
+        for (uint256 i = 0; i < returnCount; i++) {
+            paginatedRooms[i] = roomCodes[offset + i];
+        }
+        
+        bool hasMore = offset + returnCount < totalRooms;
+        
+        return (paginatedRooms, hasMore);
     }
 }
