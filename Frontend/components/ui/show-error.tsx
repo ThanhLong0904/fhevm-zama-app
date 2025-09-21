@@ -67,14 +67,14 @@ export function ShowError({
           : "transform translate-x-full opacity-0"
       }`}
     >
-      <Alert className="bg-red-500/10 border-red-500/30 text-red-400 shadow-lg">
+      <Alert className={`bg-${bgColor} border-${bgColor}-500 text-${bgColor}-400 shadow-lg`}>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription className="pr-8 mb-3">{message}</AlertDescription>
 
         {/* Progress Bar */}
         <div className="w-full bg-gray-700/50 rounded-full h-2 mb-2">
           <div
-            className="bg-gradient-to-r from-red-500 to-orange-500 h-2 rounded-full transition-all duration-1000"
+            className={`bg-gradient-to-r from-${bgColor}-500 to-orange-500 h-2 rounded-full transition-all duration-1000`}
             style={{
               width: `${progressPercentage}%`,
             }}
@@ -82,7 +82,7 @@ export function ShowError({
         </div>
 
         {/* Time remaining */}
-        <div className="text-xs text-red-300/70 mb-1">
+        <div className={`text-xs text-${bgColor}-300/70 mb-1`}>
           Auto dismiss in {timeLeft}s
         </div>
 
@@ -91,7 +91,7 @@ export function ShowError({
           onClick={onDismiss}
           variant="ghost"
           size="sm"
-          className="absolute top-2 right-2 h-6 w-6 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/20"
+          className={`absolute top-2 right-2 h-6 w-6 p-0 text-${bgColor}-400 hover:text-${bgColor}-300 hover:bg-${bgColor}-500/20`}
         >
           <X className="h-4 w-4" />
         </Button>

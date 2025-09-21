@@ -183,8 +183,9 @@ export function HomePage({ onNavigate }: HomePageProps) {
 
   // Get current page rooms
   const getCurrentPageRooms = () => {
+    const reversedRooms = [...featuredRooms].reverse();
     const startIndex = currentPage * ROOMS_PER_PAGE;
-    return featuredRooms.slice(startIndex, startIndex + ROOMS_PER_PAGE);
+    return reversedRooms.slice(startIndex, startIndex + ROOMS_PER_PAGE);
   };
 
   // Calculate total pages
@@ -579,6 +580,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
                 <Card
                   key={room.code}
                   className="bg-gray-800/50 border-gray-700/50 hover:bg-gray-700/50 hover:border-gray-600/50 transition-all duration-300 hover:-translate-y-1 cursor-pointer"
+                  onClick={() => handleRoomCardClick(room)}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">
@@ -637,7 +639,6 @@ export function HomePage({ onNavigate }: HomePageProps) {
                         />
                       </div>
                       <Button
-                        onClick={() => handleRoomCardClick(room)}
                         variant="ghost"
                         className="w-full text-gray-300 hover:text-white hover:bg-blue-500/10 transition-all duration-200 flex items-center justify-between"
                         disabled={!room.isActive}

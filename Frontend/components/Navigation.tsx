@@ -61,10 +61,6 @@ export function Navigation() {
         }
       } catch (error) {
         console.error("Failed to switch account:", error);
-        // Show user-friendly message
-        alert(
-          "Please manually switch accounts in MetaMask and refresh the page."
-        );
       }
     }
     setIsWalletDropdownOpen(false);

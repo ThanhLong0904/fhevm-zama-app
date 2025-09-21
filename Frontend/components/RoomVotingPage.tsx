@@ -145,7 +145,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   useEffect(() => {
     const updateVotingResults = async () => {
       if (!roomCode || !room) return;
-
+      console.log("useEffect11111111111111111111111111: ",hasVoted, room, roomCode, votingRoom, candidates.length);
       try {
         // Get real voting results from blockchain using existing methods
         const roomInfo = await votingRoom.getRoomInfo(roomCode);
@@ -195,13 +195,13 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     updateVotingResults();
 
     // Set up interval to refresh results if room is active
-    const intervalId = setInterval(() => {
-      if (room?.isActive || hasVoted) {
-        updateVotingResults();
-      }
-    }, 10000); // Refresh every 10 seconds
+    // const intervalId = setInterval(() => {
+    //   if (room?.isActive || hasVoted) {
+    //     updateVotingResults();
+    //   }
+    // }, 10000); // Refresh every 10 seconds
 
-    return () => clearInterval(intervalId);
+    // return () => clearInterval(intervalId);
   }, [hasVoted, room, roomCode, votingRoom, candidates.length]); // Dependencies for real-time updates
 
   // Timer countdown
@@ -320,7 +320,6 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
 
       if (success) {
         setIsParticipant(true);
-        alert("Successfully joined the room! 🎉");
       } else {
         const errorMessage = votingRoom.message || "Failed to join room";
         setErrorMessage(`Join failed: ${errorMessage}`);
@@ -360,7 +359,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         message={errorMessage}
         onDismiss={dismissError}
         bgColor={
-          errorMessage.includes("successfully") ? "bg-green-100" : "bg-red-100"
+          errorMessage.includes("successfully") ? "green" : "red"
         }
       />
 
@@ -454,6 +453,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                       Voting Progress
                     </span>
                     <span className="text-sm text-gray-400">
+                      {console.log("currentParticipants", currentParticipants)}
                       {Math.round(
                         (currentParticipants / room.maxParticipants) * 100
                       )}
@@ -857,7 +857,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   <CardTitle className="text-white">Room Information</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
-                  <div className="flex justify-between">
+                  {/* <div className="flex justify-between">
                     <span className="text-gray-400">Created by:</span>
                     <span
                       className="text-white truncate ml-2"
@@ -869,22 +869,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                           )}`
                         : room.creator}
                     </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">End Time:</span>
-                    <span className="text-white">
-                      {new Date(room.endTime * 1000).toLocaleDateString(
-                        "en-US",
-                        {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        }
-                      )}
-                    </span>
-                  </div>
+                  </div> */}
+                  
                   <div className="flex justify-between">
                     <span className="text-gray-400">Status:</span>
                     <Badge
@@ -904,6 +890,21 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   <div className="flex justify-between">
                     <span className="text-gray-400">Total Candidates:</span>
                     <span className="text-white">{room.candidateCount}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-400">End Time:</span>
+                    <span className="text-white">
+                      {new Date(room.endTime * 1000).toLocaleDateString(
+                        "en-GB",
+                        {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        }
+                      )}
+                    </span>
                   </div>
                   {room.hasPassword && (
                     <div className="flex justify-between">
