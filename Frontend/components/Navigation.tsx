@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useMetaMaskEthersSigner } from "../hooks/metamask/useMetaMaskEthersSigner";
 import { useWalletCheck } from "@/hooks/useWalletCheck";
-import { ShowError } from "./ui/show-error";
+import { Toast } from "./ui/toast";
 import { Button } from "./ui/button";
 
 export function Navigation() {
@@ -315,12 +315,12 @@ export function Navigation() {
         )}
       </div>
       {/* Wallet Connection Error */}
-      <ShowError
+      <Toast
         isVisible={showWalletError}
         message="Please connect your MetaMask wallet to continue."
         onDismiss={handleWalletErrorDismiss}
         duration={8}
-        bgColor="bg-red-100"
+        bgColor="red"
       />
     </nav>
   );

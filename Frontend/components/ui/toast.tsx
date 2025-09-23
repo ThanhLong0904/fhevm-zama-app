@@ -5,21 +5,21 @@ import { AlertCircle, X } from "lucide-react";
 import { Alert, AlertDescription } from "./alert";
 import { Button } from "./button";
 
-interface ShowErrorProps {
+interface ToastProps {
   isVisible: boolean;
   message: string;
-  bgColor: string;
+  bgColor: string; // "red", "green", "blue", ...
   onDismiss: () => void;
   duration?: number; // in seconds, default 8
 }
 
-export function ShowError({
+export function Toast({
   isVisible,
   bgColor,
   message,
   onDismiss,
   duration = 8,
-}: ShowErrorProps) {
+}: ToastProps) {
   const [timeLeft, setTimeLeft] = useState(duration);
   const [isAnimating, setIsAnimating] = useState(false);
 
@@ -44,13 +44,11 @@ export function ShowError({
     }
   }, [isVisible, duration]);
 
-  // Separate useEffect to handle auto-dismiss to avoid setState during render
   useEffect(() => {
     if (isVisible && timeLeft === 0) {
       const dismissTimer = setTimeout(() => {
         onDismiss();
       }, 0);
-
       return () => clearTimeout(dismissTimer);
     }
   }, [timeLeft, isVisible, onDismiss]);
@@ -67,11 +65,11 @@ export function ShowError({
           : "transform translate-x-full opacity-0"
       }`}
     >
-      <Alert className={`bg-${bgColor} border-${bgColor}-500 text-${bgColor}-400 shadow-lg`}>
+      <Alert
+        className={`bg-${bgColor} border-${bgColor}-500 text-${bgColor}-400 shadow-lg`}
+      >
         <AlertCircle className="h-4 w-4" />
         <AlertDescription className="pr-8 mb-3">{message}</AlertDescription>
-
-        {/* Progress Bar */}
         <div className="w-full bg-gray-700/50 rounded-full h-2 mb-2">
           <div
             className={`bg-gradient-to-r from-${bgColor}-500 to-orange-500 h-2 rounded-full transition-all duration-1000`}
@@ -80,13 +78,9 @@ export function ShowError({
             }}
           />
         </div>
-
-        {/* Time remaining */}
         <div className={`text-xs text-${bgColor}-300/70 mb-1`}>
           Auto dismiss in {timeLeft}s
         </div>
-
-        {/* Close button */}
         <Button
           onClick={onDismiss}
           variant="ghost"

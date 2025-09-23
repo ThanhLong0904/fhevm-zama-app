@@ -354,7 +354,7 @@ export const useVotingRoom = (parameters: {
       const contract = getContract();
       if (!contract) {
         setMessage("Contract not available");
-        return false;
+        throw new Error("Contract not available");
       }
 
       setIsLoading(true);
@@ -370,15 +370,15 @@ export const useVotingRoom = (parameters: {
           return true;
         } else {
           setMessage("Joining room failed");
-          return false;
+          throw new Error("Transaction failed");
         }
       } catch (error: unknown) {
-        setMessage(
-          `Error joining room: ${
-            error instanceof Error ? error.message : String(error)
-          }`
-        );
-        return false;
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        setMessage(`Error joining room: ${errorMessage}`);
+
+        // Re-throw the error so password validation can catch it
+        throw error;
       } finally {
         setIsLoading(false);
       }
@@ -743,6 +743,74 @@ export const useVotingRoom = (parameters: {
     [getReadOnlyContract]
   );
 
+  // Check if user is already a participant in a room (read-only, no transaction)
+  const checkParticipantStatus = useCallback(
+    async (roomCode: string, userAddress?: string) => {
+      const contract = getReadOnlyContract();
+      if (!contract) {
+        throw new Error("Contract not available");
+      }
+
+      try {
+        const address = userAddress || (await ethersSigner?.getAddress());
+        if (!address) {
+          throw new Error("User address not available");
+        }
+
+        const [isParticipantResult, hasVotedResult] = await Promise.all([
+          contract.isParticipant(roomCode, address),
+          contract.hasVoted(roomCode, address),
+        ]);
+
+        return {
+          isParticipant: isParticipantResult,
+          hasVoted: hasVotedResult,
+        };
+      } catch (error) {
+        console.error("Error checking participant status:", error);
+        throw error;
+      }
+    },
+    [getReadOnlyContract, ethersSigner]
+  );
+
+  // Get room password hash for frontend validation (read-only, no transaction)
+  const getRoomPasswordHash = useCallback(
+    async (roomCode: string) => {
+      const contract = getReadOnlyContract();
+      if (!contract) {
+        throw new Error("Contract not available");
+      }
+
+      try {
+        const room = await contract.getRoom(roomCode);
+        return {
+          hasPassword: room.hasPassword,
+          passwordHash: room.hasPassword ? room.passwordHash : null,
+        };
+      } catch (error) {
+        console.error("Error getting room password hash:", error);
+        throw error;
+      }
+    },
+    [getReadOnlyContract]
+  );
+
+  // Validate password locally using keccak256 (no transaction)
+  const validatePasswordLocally = useCallback(
+    (password: string, passwordHash: string): boolean => {
+      try {
+        // Use ethers.js to compute keccak256 hash
+        const providedHash = ethers.keccak256(ethers.toUtf8Bytes(password));
+        return providedHash === passwordHash;
+      } catch (error) {
+        console.error("Error validating password locally:", error);
+        return false;
+      }
+    },
+    []
+  );
+
   return {
     // State
     isLoading,
@@ -766,6 +834,11 @@ export const useVotingRoom = (parameters: {
     getActiveRooms,
     getRoomsPaginated,
     getFeaturedRooms,
+
+    // Gasless transaction helpers
+    checkParticipantStatus,
+    getRoomPasswordHash,
+    validatePasswordLocally,
 
     // Utils
     setMessage,

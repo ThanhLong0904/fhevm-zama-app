@@ -11,7 +11,7 @@ import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 import { Switch } from "./ui/switch";
-import { ShowError } from "./ui/show-error";
+import { Toast } from "./ui/toast";
 import { CustomDatePicker } from "./ui/custom-date-picker";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import {
@@ -387,11 +387,11 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
   return (
     <div className="min-h-screen bg-[#0F0F23] py-8">
       {/* Show Error Component */}
-      <ShowError
+      <Toast
         isVisible={showError}
         message={errorMessage}
         onDismiss={dismissError}
-        bgColor="bg-red-100"
+        bgColor="red"
       />
 
       <div className="container mx-auto px-4">
@@ -727,12 +727,12 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
       </div>
 
       {/* Wallet Connection Error */}
-      <ShowError
+      <Toast
         isVisible={showWalletError}
         message="Please connect your MetaMask wallet to continue."
         onDismiss={handleWalletErrorDismiss}
         duration={8}
-        bgColor="bg-red-100"
+        bgColor="red"
       />
     </div>
   );

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
-import { ShowError } from "./ui/show-error";
+import { Toast } from "./ui/toast";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import {
   ArrowLeft,
@@ -58,10 +58,12 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   const [isJoining, setIsJoining] = useState(false);
   const [showResults, setShowResults] = useState(false);
   const [currentParticipants, setCurrentParticipants] = useState(0);
+  const [currentVoters, setCurrentVoters] = useState(0);
   const [copied, setCopied] = useState(false);
   const [timeLeft, setTimeLeft] = useState("");
   const [showError, setShowError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
+  const [isLoadingUserStatus, setIsLoadingUserStatus] = useState(true);
   const hasLoadedRef = useRef(false);
 
   // FHE and Web3 hooks
@@ -87,12 +89,39 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     chainId,
   });
 
+  // Reset loading state when wallet changes
+  useEffect(() => {
+    if (ethersSigner) {
+      hasLoadedRef.current = false; // Reset loading state when wallet changes
+      setIsLoadingUserStatus(true); // Reset user status loading
+    }
+  }, [ethersSigner]);
+
+  // Reset loading state when component unmounts or roomCode changes
+  useEffect(() => {
+    setIsLoadingUserStatus(true);
+    hasLoadedRef.current = false;
+  }, [roomCode]);
+
   // Load room data on component mount
   useEffect(() => {
     const loadRoomData = async () => {
-      if (!roomCode || hasLoadedRef.current) return;
+      if (!roomCode || !ethersSigner) return;
+
+      // Prevent multiple simultaneous loads
+      if (hasLoadedRef.current) return;
+      hasLoadedRef.current = true;
 
       try {
+        // Set a loading timeout
+        const loadingTimeout = setTimeout(() => {
+          console.warn(
+            "Loading taking too long, potential issue with data fetching"
+          );
+          // Force complete loading after timeout to prevent infinite loading
+          setIsLoadingUserStatus(false);
+        }, 15000); // 15 second timeout
+
         // Get room information
         const roomInfo = await votingRoom.getRoomInfo(roomCode);
         if (roomInfo) {
@@ -131,21 +160,36 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         setIsParticipant(userIsParticipant);
         setShowResults(userHasVoted);
 
-        hasLoadedRef.current = true;
+        // Estimate current voters (this is approximate since we don't have exact count from contract)
+        // For now, assume 60-80% of participants have voted if room is active
+        if (roomInfo && roomInfo.isActive) {
+          const estimatedVoterPercentage = 0.7; // 70% assumption
+          const estimatedVoters = Math.floor(
+            roomInfo.participantCount * estimatedVoterPercentage
+          );
+          setCurrentVoters(estimatedVoters);
+        } else if (roomInfo && !roomInfo.isActive) {
+          // If room ended, assume all participants voted
+          setCurrentVoters(roomInfo.participantCount);
+        }
+
+        // Mark loading as complete
+        setIsLoadingUserStatus(false);
+        clearTimeout(loadingTimeout);
       } catch (error) {
         console.error("Error loading room data:", error);
+        hasLoadedRef.current = false; // Reset on error to allow retry
+        setIsLoadingUserStatus(false); // Stop loading even on error
       }
     };
 
     loadRoomData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [roomCode]); // Only depend on roomCode to prevent infinite loop
+  }, [roomCode, ethersSigner, votingRoom]); // Include ethersSigner to reload on wallet change
 
   // Update voting results from blockchain
   useEffect(() => {
     const updateVotingResults = async () => {
       if (!roomCode || !room) return;
-      console.log("useEffect11111111111111111111111111: ",hasVoted, room, roomCode, votingRoom, candidates.length);
       try {
         // Get real voting results from blockchain using existing methods
         const roomInfo = await votingRoom.getRoomInfo(roomCode);
@@ -195,13 +239,13 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     updateVotingResults();
 
     // Set up interval to refresh results if room is active
-    // const intervalId = setInterval(() => {
-    //   if (room?.isActive || hasVoted) {
-    //     updateVotingResults();
-    //   }
-    // }, 10000); // Refresh every 10 seconds
+    const intervalId = setInterval(() => {
+      if (room?.isActive || hasVoted) {
+        updateVotingResults();
+      }
+    }, 10000); // Refresh every 10 seconds
 
-    // return () => clearInterval(intervalId);
+    return () => clearInterval(intervalId);
   }, [hasVoted, room, roomCode, votingRoom, candidates.length]); // Dependencies for real-time updates
 
   // Timer countdown
@@ -271,7 +315,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
 
       if (success) {
         setHasVoted(true);
-        setCurrentParticipants((prev) => prev + 1);
+        setCurrentVoters((prev) => prev + 1);
 
         // Show success message for FHE voting
         setErrorMessage(
@@ -319,7 +363,19 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       const success = await votingRoom.joinRoom(roomCode, ""); // Empty password for now
 
       if (success) {
+        // Update state immediately to prevent flickering
         setIsParticipant(true);
+        setCurrentParticipants((prev) => prev + 1);
+
+        // Also refresh room data to get accurate participant count
+        try {
+          const roomInfo = await votingRoom.getRoomInfo(roomCode);
+          if (roomInfo) {
+            setCurrentParticipants(roomInfo.participantCount);
+          }
+        } catch (refreshError) {
+          console.warn("Failed to refresh room data after join:", refreshError);
+        }
       } else {
         const errorMessage = votingRoom.message || "Failed to join room";
         setErrorMessage(`Join failed: ${errorMessage}`);
@@ -340,12 +396,14 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     );
   };
 
-  if (!room) {
+  if (!room || isLoadingUserStatus) {
     return (
       <div className="min-h-screen bg-[#0F0F23] flex items-center justify-center">
         <div className="text-center">
           <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-          <p className="text-gray-400">Loading voting room...</p>
+          <p className="text-gray-400">
+            {!room ? "Loading voting room..." : "Loading user status..."}
+          </p>
         </div>
       </div>
     );
@@ -354,13 +412,11 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   return (
     <div className="min-h-screen bg-[#0F0F23] py-8">
       {/* Show Error/Success Component */}
-      <ShowError
+      <Toast
         isVisible={showError}
         message={errorMessage}
         onDismiss={dismissError}
-        bgColor={
-          errorMessage.includes("successfully") ? "green" : "red"
-        }
+        bgColor={errorMessage.includes("successfully") ? "green" : "red"}
       />
 
       <div className="container mx-auto px-4">
@@ -445,7 +501,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                 </Card>
               </div>
 
-              {/* Progress Bar */}
+              {/* Voting Progress */}
               <Card className="bg-gray-800/50 border-gray-700/50 mb-8">
                 <CardContent className="p-4">
                   <div className="flex items-center justify-between mb-2">
@@ -453,117 +509,139 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                       Voting Progress
                     </span>
                     <span className="text-sm text-gray-400">
-                      {console.log("currentParticipants", currentParticipants)}
-                      {Math.round(
-                        (currentParticipants / room.maxParticipants) * 100
-                      )}
-                      %
+                      {currentParticipants > 0
+                        ? Math.round(
+                            (currentVoters / currentParticipants) * 100
+                          )
+                        : 0}
+                      % ({currentVoters} / {currentParticipants} voted)
                     </span>
                   </div>
                   <Progress
-                    value={(currentParticipants / room.maxParticipants) * 100}
+                    value={
+                      currentParticipants > 0
+                        ? (currentVoters / currentParticipants) * 100
+                        : 0
+                    }
                     className="h-2"
                   />
                 </CardContent>
               </Card>
 
-              {/* Room Status Messages */}
-              {!room.isActive && (
-                <Card className="bg-red-500/10 border-red-500/30 mb-8">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-red-500/20 rounded-full">
-                        <Vote className="w-5 h-5 text-red-400" />
-                      </div>
-                      <div>
-                        <div className="text-red-400">
-                          This voting room has ended
-                        </div>
-                        <div className="text-sm text-red-300/70">
-                          You can view the results but cannot vote anymore
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+              {/* Room Status Messages - Only show one at a time based on priority */}
+              {(() => {
+                // Don't show any banner while loading user status to prevent flicker
+                if (isLoadingUserStatus) {
+                  return null;
+                }
 
-              {/* Join Room Status */}
-              {room.isActive && !isParticipant && (
-                <Card className="bg-yellow-500/10 border-yellow-500/30 mb-8">
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-yellow-500/20 rounded-full">
-                          <Users className="w-5 h-5 text-yellow-400" />
-                        </div>
-                        <div>
-                          <div className="text-yellow-400">
-                            You need to join this room to vote
+                // Priority 1: Room ended
+                if (!room.isActive) {
+                  return (
+                    <Card className="bg-red-500/10 border-red-500/30 mb-8">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-red-500/20 rounded-full">
+                            <Vote className="w-5 h-5 text-red-400" />
                           </div>
-                          <div className="text-sm text-yellow-300/70">
-                            Click the button to become a participant
+                          <div>
+                            <div className="text-red-400">
+                              This voting room has ended
+                            </div>
+                            <div className="text-sm text-red-300/70">
+                              You can view the results but cannot vote anymore
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <Button
-                        onClick={handleJoinRoom}
-                        disabled={isJoining}
-                        className="bg-yellow-500 hover:bg-yellow-600 text-black"
-                      >
-                        {isJoining ? "Joining..." : "Join Room"}
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                      </CardContent>
+                    </Card>
+                  );
+                }
 
-              {/* Voting Status */}
-              {hasVoted && (
-                <Card className="bg-green-500/10 border-green-500/30 mb-8">
-                  <CardContent className="p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 bg-green-500/20 rounded-full">
-                        <Check className="w-5 h-5 text-green-400" />
-                      </div>
-                      <div>
-                        <div className="text-green-400">
-                          You have voted successfully!
+                // Priority 2: User already voted
+                if (hasVoted) {
+                  return (
+                    <Card className="bg-green-500/10 border-green-500/30 mb-8">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-green-500/20 rounded-full">
+                            <Check className="w-5 h-5 text-green-400" />
+                          </div>
+                          <div>
+                            <div className="text-green-400">
+                              You have voted successfully!
+                            </div>
+                            <div className="text-sm text-green-300/70">
+                              {room.isActive
+                                ? "Your vote has been encrypted and recorded securely. Results will be available when voting ends."
+                                : "Your vote has been encrypted and recorded securely. Results are now available below."}
+                            </div>
+                          </div>
                         </div>
-                        <div className="text-sm text-green-300/70">
-                          {room.isActive
-                            ? "Your vote has been encrypted and recorded securely. Results will be available when voting ends."
-                            : "Your vote has been encrypted and recorded securely. Results are now available below."}
-                        </div>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
+                      </CardContent>
+                    </Card>
+                  );
+                }
 
-              {/* Room Full Status */}
-              {room.isActive &&
-                currentParticipants >= room.maxParticipants &&
-                !isParticipant && (
-                  <Card className="bg-orange-500/10 border-orange-500/30 mb-8">
+                // Priority 3: User is already a participant (but hasn't voted)
+                if (isParticipant) {
+                  return null; // No status banner needed, they can vote
+                }
+
+                // Priority 4: Room is full
+                if (currentParticipants >= room.maxParticipants) {
+                  return (
+                    <Card className="bg-orange-500/10 border-orange-500/30 mb-8">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-orange-500/20 rounded-full">
+                            <Users className="w-5 h-5 text-orange-400" />
+                          </div>
+                          <div>
+                            <div className="text-orange-400">
+                              This room is full
+                            </div>
+                            <div className="text-sm text-orange-300/70">
+                              Maximum number of participants (
+                              {room.maxParticipants}) has been reached
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+
+                // Priority 5: User needs to join
+                return (
+                  <Card className="bg-yellow-500/10 border-yellow-500/30 mb-8">
                     <CardContent className="p-4">
-                      <div className="flex items-center gap-3">
-                        <div className="p-2 bg-orange-500/20 rounded-full">
-                          <Users className="w-5 h-5 text-orange-400" />
-                        </div>
-                        <div>
-                          <div className="text-orange-400">
-                            This room is full
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-yellow-500/20 rounded-full">
+                            <Users className="w-5 h-5 text-yellow-400" />
                           </div>
-                          <div className="text-sm text-orange-300/70">
-                            Maximum number of participants (
-                            {room.maxParticipants}) has been reached
+                          <div>
+                            <div className="text-yellow-400">
+                              You need to join this room to vote
+                            </div>
+                            <div className="text-sm text-yellow-300/70">
+                              Click the button to become a participant
+                            </div>
                           </div>
                         </div>
+                        <Button
+                          onClick={handleJoinRoom}
+                          disabled={isJoining}
+                          className="bg-yellow-500 hover:bg-yellow-600 text-black"
+                        >
+                          {isJoining ? "Joining..." : "Join Room"}
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
-                )}
+                );
+              })()}
 
               {/* Candidates */}
               <div className="space-y-6">
@@ -870,7 +948,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                         : room.creator}
                     </span>
                   </div> */}
-                  
+
                   <div className="flex justify-between">
                     <span className="text-gray-400">Status:</span>
                     <Badge

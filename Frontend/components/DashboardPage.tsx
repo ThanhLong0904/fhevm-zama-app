@@ -9,7 +9,6 @@ import {
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "./ui/tabs";
-import { ImageWithFallback } from "./figma/ImageWithFallback";
 import {
   ArrowLeft,
   Calendar,
@@ -24,7 +23,7 @@ import {
 } from "lucide-react";
 
 interface DashboardPageProps {
-  onNavigate: (page: string, data?: any) => void;
+  onNavigate: (page: string, data?: { roomCode?: string }) => void;
 }
 
 interface Room {

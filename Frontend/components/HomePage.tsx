@@ -9,18 +9,11 @@ import {
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Badge } from "./ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "./ui/dialog";
-import { Label } from "./ui/label";
-import { ShowError } from "./ui/show-error";
+import { Toast } from "./ui/toast";
+import { GaslessPasswordDialog } from "./ui/gasless-password-dialog";
 import { useWalletCheck } from "@/hooks/useWalletCheck";
 import { useVotingRoom } from "@/hooks/useVotingRoom";
+import { useRoomEntry } from "@/hooks/useRoomEntry";
 import { useMetaMaskEthersSigner } from "@/hooks/metamask/useMetaMaskEthersSigner";
 import { useFhevm } from "@/fhevm/useFhevm";
 import {
@@ -60,7 +53,6 @@ export function HomePage({ onNavigate }: HomePageProps) {
   const [errorMessage, setErrorMessage] = useState("");
   const [showPasswordDialog, setShowPasswordDialog] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
-  const [roomPassword, setRoomPassword] = useState("");
 
   // Featured rooms state
   const [featuredRooms, setFeaturedRooms] = useState<Room[]>([]);
@@ -228,7 +220,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [currentPage, totalPages, handlePreviousPage, handleNextPage]);
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
     // Check wallet connection first
     if (!checkWalletConnection()) {
       return;
@@ -247,6 +239,14 @@ export function HomePage({ onNavigate }: HomePageProps) {
     if (existingRoomCodes.includes(trimmedCode)) {
       const room = featuredRooms.find((r) => r.code === trimmedCode);
       if (room?.hasPassword) {
+        // Check room capacity first
+        const roomInfo = await votingRoom?.getRoomInfo(room.code);
+        if (roomInfo && roomInfo.participantCount >= roomInfo.maxParticipants) {
+          setErrorMessage("This room is full. Cannot join at this time.");
+          setShowError(true);
+          return;
+        }
+
         setSelectedRoom(room);
         setShowPasswordDialog(true);
       } else {
@@ -260,37 +260,82 @@ export function HomePage({ onNavigate }: HomePageProps) {
     }
   };
 
-  const handleRoomCardClick = (room: Room) => {
+  // Add room entry hook
+  const { handleNonPasswordRoomEntry, checkQuickRoomEntry, isProcessing } =
+    useRoomEntry();
+
+  const handleRoomCardClick = async (room: Room) => {
     // Check wallet connection first
     if (!checkWalletConnection()) {
       return;
     }
 
-    if (room.hasPassword && room.isActive) {
-      setSelectedRoom(room);
-      setShowPasswordDialog(true);
-    } else {
-      onNavigate("voting", { roomCode: room.code });
-    }
-  };
-
-  const handlePasswordSubmit = () => {
-    // For now, accept any password (in real app, validate against room password)
-    if (selectedRoom && roomPassword.trim()) {
-      setShowPasswordDialog(false);
-      setRoomPassword("");
-      onNavigate("voting", { roomCode: selectedRoom.code });
-    } else {
-      setErrorMessage("Incorrect password. Please try again.");
+    if (!room.isActive) {
+      setErrorMessage("This room is no longer active.");
       setShowError(true);
-      setRoomPassword("");
+      return;
+    }
+
+    // Create room functions object for validation
+    const roomFunctions = {
+      checkParticipantStatus:
+        votingRoom?.checkParticipantStatus ||
+        (async () => ({ isParticipant: false, hasVoted: false })),
+      getRoomPasswordHash:
+        votingRoom?.getRoomPasswordHash ||
+        (async () => ({ hasPassword: false, passwordHash: null })),
+      validatePasswordLocally:
+        votingRoom?.validatePasswordLocally || (() => false),
+      joinRoom: votingRoom?.joinRoom || (() => Promise.resolve(false)),
+    };
+
+    if (room.hasPassword) {
+      // Check room capacity first
+      const roomInfo = await votingRoom?.getRoomInfo(room.code);
+      if (roomInfo && roomInfo.participantCount >= roomInfo.maxParticipants) {
+        setErrorMessage("This room is full. Cannot join at this time.");
+        setShowError(true);
+        return;
+      }
+
+      // Check if user can enter directly with cached auth
+      const quickEntry = await checkQuickRoomEntry(room.code, roomFunctions);
+
+      if (quickEntry.canEnterDirectly) {
+        // Can enter directly, no password dialog needed
+        onNavigate("voting", { roomCode: room.code });
+      } else {
+        // Need password dialog
+        setSelectedRoom(room);
+        setShowPasswordDialog(true);
+      }
+    } else {
+      // Room without password - handle entry directly
+      try {
+        const result = await handleNonPasswordRoomEntry(
+          room.code,
+          roomFunctions
+        );
+
+        if (result.success) {
+          onNavigate("voting", { roomCode: room.code });
+        } else {
+          setErrorMessage(
+            result.error || "Failed to join room. Please try again."
+          );
+          setShowError(true);
+        }
+      } catch (error) {
+        console.error("Error joining room:", error);
+        setErrorMessage("An unexpected error occurred. Please try again.");
+        setShowError(true);
+      }
     }
   };
 
   const handlePasswordDialogClose = () => {
     setShowPasswordDialog(false);
     setSelectedRoom(null);
-    setRoomPassword("");
   };
 
   const dismissError = () => {
@@ -301,11 +346,11 @@ export function HomePage({ onNavigate }: HomePageProps) {
   return (
     <div className="min-h-screen bg-[#0F0F23]">
       {/* Show Error Component */}
-      <ShowError
+      <Toast
         isVisible={showError}
         message={errorMessage}
         onDismiss={dismissError}
-        bgColor="bg-red-100"
+        bgColor="red"
       />
 
       {/* Hero Section */}
@@ -579,8 +624,10 @@ export function HomePage({ onNavigate }: HomePageProps) {
               return getCurrentPageRooms().map((room) => (
                 <Card
                   key={room.code}
-                  className="bg-gray-800/50 border-gray-700/50 hover:bg-gray-700/50 hover:border-gray-600/50 transition-all duration-300 hover:-translate-y-1 cursor-pointer"
-                  onClick={() => handleRoomCardClick(room)}
+                  className={`bg-gray-800/50 border-gray-700/50 hover:bg-gray-700/50 hover:border-gray-600/50 transition-all duration-300 hover:-translate-y-1 cursor-pointer ${
+                    isProcessing ? "opacity-50 cursor-not-allowed" : ""
+                  }`}
+                  onClick={() => !isProcessing && handleRoomCardClick(room)}
                 >
                   <CardHeader>
                     <div className="flex items-start justify-between">
@@ -680,55 +727,33 @@ export function HomePage({ onNavigate }: HomePageProps) {
         </div>
       </div>
 
-      {/* Password Dialog */}
-      <Dialog
-        open={showPasswordDialog}
-        onOpenChange={handlePasswordDialogClose}
-      >
-        <DialogContent className="bg-gray-800 border-gray-700 text-white">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Lock className="w-5 h-5 text-yellow-400" />
-              Password Required
-            </DialogTitle>
-            <DialogDescription className="text-gray-400">
-              This room is password protected. Please enter the password to join
-              &ldquo;{selectedRoom?.title}&rdquo;.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label className="text-gray-300 mb-2">Room Password</Label>
-              <Input
-                type="password"
-                value={roomPassword}
-                onChange={(e) => setRoomPassword(e.target.value)}
-                placeholder="Enter room password..."
-                className="bg-gray-700/50 border-gray-600/50 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
-                onKeyPress={(e) => e.key === "Enter" && handlePasswordSubmit()}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              onClick={handlePasswordDialogClose}
-              variant="outline"
-              className="border-gray-600/50 text-gray-300 hover:bg-white/10"
-            >
-              Cancel
-            </Button>
-            <Button
-              onClick={handlePasswordSubmit}
-              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
-            >
-              Join Room
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Gasless Password Dialog */}
+      <GaslessPasswordDialog
+        isOpen={showPasswordDialog}
+        onClose={handlePasswordDialogClose}
+        onSuccess={() => {
+          if (selectedRoom) {
+            onNavigate("voting", { roomCode: selectedRoom.code });
+          }
+        }}
+        roomCode={selectedRoom?.code || ""}
+        roomTitle={selectedRoom?.title || ""}
+        roomValidationFunctions={{
+          checkParticipantStatus:
+            votingRoom?.checkParticipantStatus ||
+            (async () => ({ isParticipant: false, hasVoted: false })),
+          getRoomPasswordHash:
+            votingRoom?.getRoomPasswordHash ||
+            (async () => ({ hasPassword: false, passwordHash: null })),
+          validatePasswordLocally:
+            votingRoom?.validatePasswordLocally || (() => false),
+        }}
+        signer={ethersSigner}
+        contractAddress={votingRoom?.contractAddress || ""}
+      />
 
       {/* Wallet Connection Error */}
-      <ShowError
+      <Toast
         isVisible={showWalletError}
         message="Please connect your MetaMask wallet to continue."
         onDismiss={handleWalletErrorDismiss}
