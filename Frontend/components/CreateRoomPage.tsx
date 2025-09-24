@@ -248,6 +248,9 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
       );
 
       if (success) {
+        // Calculate correct end time in seconds since epoch
+        const endTimeSeconds = Math.floor(new Date(endTime).getTime() / 1000);
+
         const newRoom: Room = {
           code: roomCode,
           title: roomTitle,
@@ -255,7 +258,7 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
           creator: "current-user", // This would be actual user address in real app
           maxParticipants: parseInt(maxParticipants),
           participantCount: 1, // Creator is automatically a participant
-          endTime: Math.floor(Date.now() / 1000) + parseInt(endTime) * 60 * 60, // Convert hours to timestamp
+          endTime: endTimeSeconds,
           hasPassword,
           isActive: true,
           candidateCount: validCandidates.length,
@@ -265,13 +268,14 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
       } else {
         // Handle error case - show detailed error information
         const errorMsg =
-          votingRoom.message || "Unknown error occurred while creating room";
+          votingRoom?.message || "Unknown error occurred while creating room";
         console.error("Failed to create room:", {
           error: errorMsg,
-          contractAddress: votingRoom.contractAddress,
+          contractAddress: votingRoom?.contractAddress || "Not available",
           ethersSigner: !!ethersSigner,
           fhevmInstance: !!fhevmInstance,
-          chainId,
+          chainId: chainId || "Not available",
+          votingRoomObject: votingRoom ? "Available" : "Null/Undefined",
         });
         setErrorMessage(`Failed to create room: ${errorMsg}`);
         setShowError(true);

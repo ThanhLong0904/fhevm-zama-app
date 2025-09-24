@@ -18,7 +18,7 @@ import {
 import { useVotingRoom } from "@/hooks/useVotingRoom";
 import { useFhevm } from "@/fhevm/useFhevm";
 import { useMetaMaskEthersSigner } from "@/hooks/metamask/useMetaMaskEthersSigner";
-
+console.log("useVotingRoom", useVotingRoom);
 interface Candidate {
   id: string;
   name: string;
@@ -53,6 +53,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     null
   );
   const [hasVoted, setHasVoted] = useState(false);
+  const [votedCandidate, setVotedCandidate] = useState<string | null>(null);
   const [isParticipant, setIsParticipant] = useState(false);
   const [isVoting, setIsVoting] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
@@ -88,12 +89,13 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     ethersReadonlyProvider,
     chainId,
   });
-
   // Reset loading state when wallet changes
   useEffect(() => {
     if (ethersSigner) {
       hasLoadedRef.current = false; // Reset loading state when wallet changes
       setIsLoadingUserStatus(true); // Reset user status loading
+      setVotedCandidate(null); // Reset voted candidate when wallet changes
+      setSelectedCandidate(null); // Reset selected candidate when wallet changes
     }
   }, [ethersSigner]);
 
@@ -101,6 +103,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   useEffect(() => {
     setIsLoadingUserStatus(true);
     hasLoadedRef.current = false;
+    setVotedCandidate(null); // Reset voted candidate when room changes
+    setSelectedCandidate(null); // Reset selected candidate when room changes
   }, [roomCode]);
 
   // Load room data on component mount
@@ -315,6 +319,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
 
       if (success) {
         setHasVoted(true);
+        setVotedCandidate(selectedCandidate); // Lưu candidate đã vote
         setCurrentVoters((prev) => prev + 1);
 
         // Show success message for FHE voting
@@ -509,18 +514,20 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                       Voting Progress
                     </span>
                     <span className="text-sm text-gray-400">
-                      {currentParticipants > 0
+                      {(room && room.maxParticipants > 0) ||
+                      currentParticipants > 0
                         ? Math.round(
-                            (currentVoters / currentParticipants) * 100
+                            (currentVoters / room.maxParticipants) * 100
                           )
                         : 0}
-                      % ({currentVoters} / {currentParticipants} voted)
+                      % ({currentVoters} / {room?.maxParticipants} voted)
                     </span>
                   </div>
                   <Progress
                     value={
+                      (room && room.maxParticipants > 0) ||
                       currentParticipants > 0
-                        ? (currentVoters / currentParticipants) * 100
+                        ? (currentVoters / room.maxParticipants) * 100
                         : 0
                     }
                     className="h-2"
@@ -650,7 +657,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   {showResults && (
                     <div className="flex items-center gap-2 text-sm text-gray-400">
                       <Eye className="w-4 h-4" />
-                      Current Results
+                      ResultsCurrent
                     </div>
                   )}
                 </div>
@@ -658,21 +665,29 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                 <div className="grid md:grid-cols-2 gap-6">
                   {candidates.map((candidate) => {
                     const isSelected = selectedCandidate === candidate.id;
+                    const isVotedFor =
+                      hasVoted && votedCandidate === candidate.id;
                     const isWinner =
                       showResults && candidate.id === getWinner().id;
 
                     return (
                       <Card
                         key={candidate.id}
-                        className={`transition-all duration-300 cursor-pointer ${
-                          hasVoted
-                            ? "bg-gray-800/50 border-gray-700/50"
+                        className={`transition-all duration-300 ${
+                          hasVoted || !isParticipant
+                            ? " bg-gray-800/50 border-gray-700/50"
                             : isSelected
-                            ? "bg-blue-500/20 border-blue-500/50 shadow-lg shadow-blue-500/20"
-                            : "bg-gray-800/50 border-gray-700/50 hover:bg-gray-700/50 hover:border-gray-600/50"
+                            ? "cursor-pointer bg-blue-500/20 border-blue-500/50 shadow-lg shadow-blue-500/20"
+                            : "cursor-pointer bg-gray-800/50 border-gray-700/50 hover:bg-gray-700/50 hover:border-gray-600/50"
+                        } ${
+                          isVotedFor
+                            ? "bg-green-500/20 border-green-500/50 ring-2 ring-green-500/30"
+                            : ""
                         } ${isWinner ? "ring-2 ring-yellow-500/50" : ""}`}
                         onClick={() =>
-                          !hasVoted && setSelectedCandidate(candidate.id)
+                          !hasVoted &&
+                          isParticipant &&
+                          setSelectedCandidate(candidate.id)
                         }
                       >
                         <CardContent className="p-6">
@@ -695,11 +710,18 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                                 <h3 className="text-white text-lg">
                                   {candidate.name}
                                 </h3>
-                                {isSelected && !hasVoted && (
-                                  <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
-                                    Selected
-                                  </Badge>
-                                )}
+                                <div className="flex gap-2">
+                                  {isSelected && !hasVoted && (
+                                    <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+                                      Selected
+                                    </Badge>
+                                  )}
+                                  {isVotedFor && (
+                                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                                      Your Vote
+                                    </Badge>
+                                  )}
+                                </div>
                               </div>
 
                               <p className="text-gray-400 text-sm mb-3">

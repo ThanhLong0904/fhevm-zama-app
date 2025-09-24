@@ -66,7 +66,7 @@ export function Toast({
       }`}
     >
       <Alert
-        className={`bg-${bgColor} border-${bgColor}-500 text-${bgColor}-400 shadow-lg`}
+        className={`bg-${bgColor}-500/10 border-${bgColor}-500 text-${bgColor}-400 shadow-lg`}
       >
         <AlertCircle className="h-4 w-4" />
         <AlertDescription className="pr-8 mb-3">{message}</AlertDescription>
