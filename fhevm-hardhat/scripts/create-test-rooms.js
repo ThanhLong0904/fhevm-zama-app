@@ -7,7 +7,8 @@ async function main() {
 
   // Get deployed VotingRoom contract
   const VotingRoom = await ethers.getContractFactory("VotingRoom");
-  const votingRoom = VotingRoom.attach("0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512");
+  // const votingRoom = VotingRoom.attach("0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512");
+  const votingRoom = VotingRoom.attach("0xfC4C6F6ABE4998b7ec618AB716Cf631cC6F35B06");
 
   // Test room data
   const testRooms = [

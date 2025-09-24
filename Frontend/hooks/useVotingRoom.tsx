@@ -40,7 +40,7 @@ export const useVotingRoom = (parameters: {
   // Contract address - should be loaded from deployments
   const votingRoomAddress = useMemo(() => {
     // Updated address from latest deployment
-    return "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
+    return "0xfC4C6F6ABE4998b7ec618AB716Cf631cC6F35B06";
   }, []);
 
   // Contract ABI imported from generated files
