@@ -135,12 +135,38 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
 
   const handleImageUpload = (candidateId: string, file: File) => {
     if (file && file.type.startsWith("image/")) {
+      // Check file size (limit to 1MB to avoid gas limit issues)
+      const maxSize = 1024 * 1024; // 1MB
+      if (file.size > maxSize) {
+        setErrorMessage(
+          "Image file is too large. Please select an image smaller than 1MB."
+        );
+        setShowError(true);
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = (e) => {
         const imageUrl = e.target?.result as string;
+        // Additional check for base64 string length
+        if (imageUrl.length > 500000) {
+          // ~500KB base64 string
+          setErrorMessage(
+            "Image data is too large for blockchain storage. Please use a smaller image."
+          );
+          setShowError(true);
+          return;
+        }
         updateCandidate(candidateId, "image", imageUrl);
       };
+      reader.onerror = () => {
+        setErrorMessage("Failed to read image file. Please try again.");
+        setShowError(true);
+      };
       reader.readAsDataURL(file);
+    } else {
+      setErrorMessage("Please select a valid image file.");
+      setShowError(true);
     }
   };
 
@@ -233,7 +259,16 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
         : 24;
 
       // Filter valid candidates before creating room
-      const validCandidates = candidates.filter((c) => c.name.trim());
+      const validCandidates = candidates
+        .filter((c) => c.name.trim())
+        .map((c) => ({
+          ...c,
+          // Use default image if current image is too large or invalid
+          image:
+            c.image.length > 500000
+              ? defaultImages[0] // fallback to first default image
+              : c.image,
+        }));
 
       // Create room with candidates in SINGLE TRANSACTION (1 MetaMask confirmation)
       const success = await votingRoom.createRoomWithCandidatesBatchSingle(
@@ -267,8 +302,15 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
         setCreatedRoom(newRoom);
       } else {
         // Handle error case - show detailed error information
-        const errorMsg =
+        let errorMsg =
           votingRoom?.message || "Unknown error occurred while creating room";
+        if (
+          errorMsg.includes("image data too large") ||
+          errorMsg.includes("smaller images")
+        ) {
+          errorMsg =
+            "One or more candidate images are too large. Please use images smaller than 1MB, or reduce total image size.";
+        }
         console.error("Failed to create room:", {
           error: errorMsg,
           contractAddress: votingRoom?.contractAddress || "Not available",

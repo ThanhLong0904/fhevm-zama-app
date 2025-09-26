@@ -164,6 +164,15 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         setIsParticipant(userIsParticipant);
         setShowResults(userHasVoted);
 
+        // Load voted candidate from localStorage if user has voted
+        if (userHasVoted && ethersSigner?.address) {
+          const storageKey = `votedCandidate_${roomCode}_${ethersSigner.address}`;
+          const storedVotedCandidate = localStorage.getItem(storageKey);
+          if (storedVotedCandidate) {
+            setVotedCandidate(storedVotedCandidate);
+          }
+        }
+
         // Estimate current voters (this is approximate since we don't have exact count from contract)
         // For now, assume 60-80% of participants have voted if room is active
         if (roomInfo && roomInfo.isActive) {
@@ -321,6 +330,12 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         setHasVoted(true);
         setVotedCandidate(selectedCandidate); // Lưu candidate đã vote
         setCurrentVoters((prev) => prev + 1);
+
+        // Save voted candidate to localStorage for persistence
+        if (ethersSigner?.address && roomCode) {
+          const storageKey = `votedCandidate_${roomCode}_${ethersSigner.address}`;
+          localStorage.setItem(storageKey, selectedCandidate);
+        }
 
         // Show success message for FHE voting
         setErrorMessage(

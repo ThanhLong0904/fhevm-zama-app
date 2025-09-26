@@ -4,6 +4,7 @@ import { ethers } from "ethers";
 import { useState, useCallback, useMemo } from "react";
 import { FhevmInstance } from "@/fhevm/fhevmTypes";
 import { VotingRoomABI } from "@/abi/VotingRoomABI";
+import { VotingRoomAddresses } from "@/abi/VotingRoomAddresses";
 
 interface Room {
   code: string;
@@ -32,16 +33,21 @@ export const useVotingRoom = (parameters: {
   ethersReadonlyProvider: ethers.ContractRunner | undefined;
   chainId: number | undefined;
 }) => {
-  const { instance, ethersSigner, ethersReadonlyProvider } = parameters;
+  const { instance, ethersSigner, ethersReadonlyProvider, chainId } =
+    parameters;
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [message, setMessage] = useState<string>("");
 
   // Contract address - should be loaded from deployments
   const votingRoomAddress = useMemo(() => {
-    // Updated address from latest deployment
-    return "0xfC4C6F6ABE4998b7ec618AB716Cf631cC6F35B06";
-  }, []);
+    // Use chainId to select correct contract address
+    const chainIdStr = chainId?.toString() || "31337"; // Default to localhost
+    return (
+      VotingRoomAddresses[chainIdStr as keyof typeof VotingRoomAddresses]
+        ?.address || "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+    ); // Fallback to localhost
+  }, [chainId]);
 
   // Contract ABI imported from generated files
   const contractABI = VotingRoomABI;
@@ -264,6 +270,25 @@ export const useVotingRoom = (parameters: {
         const descriptions = candidates.map((c) => c.description);
         const images = candidates.map((c) => c.image);
 
+        // Validate image data size
+        const totalImageSize = images.reduce(
+          (total, img) => total + img.length,
+          0
+        );
+        if (totalImageSize > 2000000) {
+          // ~2MB total limit
+          setMessage("Total image data too large. Please use smaller images.");
+          return false;
+        }
+
+        console.log("Creating room with candidates:", {
+          code,
+          title,
+          candidateCount: candidates.length,
+          totalImageSize,
+          hasPassword,
+        });
+
         // Create room and add all candidates in SINGLE TRANSACTION
         const tx = await contract.createRoomWithCandidatesBatch(
           code,
@@ -399,27 +424,70 @@ export const useVotingRoom = (parameters: {
       setMessage("Encrypting vote...");
 
       try {
+        // Get user address properly - this is crucial for createEncryptedInput
+        const userAddress = await ethersSigner.getAddress();
+
         // Debug logging
         console.log("🗳️ Starting vote process:", {
           roomCode,
           candidateId,
-          voterAddress: ethersSigner.address,
+          userAddress,
           contractAddress: votingRoomAddress,
         });
 
         // Let the browser repaint before running 'input.encrypt()' (CPU-costly)
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // Create encrypted input for vote (value = 1) - follow useFHECounter pattern
+        // Create encrypted input for vote (value = 1) - follow useFHECounter pattern exactly
         console.log("🔐 Creating encrypted input...");
         const input = instance.createEncryptedInput(
           votingRoomAddress,
-          ethersSigner.address
+          userAddress
         );
         input.add32(1); // Vote value is always 1
 
-        // is CPU-intensive (browser may freeze a little when FHE-WASM modules are loading)
-        const enc = await input.encrypt();
+        console.log("⚙️ Encrypting input (this may take a moment)...");
+        console.log("Debug input state:", {
+          contractAddress: votingRoomAddress,
+          userAddress,
+          instanceType: typeof instance,
+          inputType: typeof input,
+        });
+
+        // Try encrypting with better error handling
+        let enc;
+        try {
+          // is CPU-intensive (browser may freeze a little when FHE-WASM modules are loading)
+          enc = await input.encrypt();
+        } catch (encryptError: any) {
+          console.error("� Encrypt error details:", {
+            error: encryptError,
+            message: encryptError?.message,
+            stack: encryptError?.stack,
+            cause: encryptError?.cause,
+          });
+
+          // If relayer error, try alternative approach
+          if (encryptError?.message?.includes("extraData")) {
+            console.log("� Retrying with different approach...");
+            // Try creating a fresh input
+            const newInput = instance.createEncryptedInput(
+              votingRoomAddress,
+              userAddress
+            );
+            newInput.add32(1);
+
+            try {
+              enc = await newInput.encrypt();
+              console.log("✅ Retry successful!");
+            } catch (retryError) {
+              console.error("💥 Retry failed:", retryError);
+              throw encryptError; // Throw original error
+            }
+          } else {
+            throw encryptError;
+          }
+        }
         console.log("✅ Encrypted vote created:", {
           handle: enc.handles[0],
           proofLength: enc.inputProof.length,
@@ -440,7 +508,6 @@ export const useVotingRoom = (parameters: {
           enc.handles[0],
           enc.inputProof
         );
-
         console.log("⏳ Transaction sent:", tx.hash);
         setMessage(`Waiting for transaction ${tx.hash}...`);
         const receipt = await tx.wait();
@@ -463,7 +530,6 @@ export const useVotingRoom = (parameters: {
           error: errorMessage,
           roomCode,
           candidateId,
-          voterAddress: ethersSigner?.address,
         });
         setMessage(`Vote casting failed: ${errorMessage}`);
         return false;
