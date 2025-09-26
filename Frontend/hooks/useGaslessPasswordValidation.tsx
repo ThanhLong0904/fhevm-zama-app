@@ -94,8 +94,6 @@ export const useGaslessPasswordValidation = () => {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
 
-        console.error("Password validation error:", errorMessage);
-
         // Handle specific error cases
         if (errorMessage.includes("Room does not exist")) {
           return {

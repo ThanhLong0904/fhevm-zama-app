@@ -246,11 +246,6 @@ export const useVotingRoom = (parameters: {
           ? "Contract address not available"
           : "Contract initialization failed";
         setMessage(errorMsg);
-        console.error("Contract not available:", {
-          ethersSigner: !!ethersSigner,
-          votingRoomAddress,
-          chainId: parameters.chainId,
-        });
         return false;
       }
 
@@ -280,14 +275,6 @@ export const useVotingRoom = (parameters: {
           setMessage("Total image data too large. Please use smaller images.");
           return false;
         }
-
-        console.log("Creating room with candidates:", {
-          code,
-          title,
-          candidateCount: candidates.length,
-          totalImageSize,
-          hasPassword,
-        });
 
         // Create room and add all candidates in SINGLE TRANSACTION
         const tx = await contract.createRoomWithCandidatesBatch(
@@ -427,79 +414,18 @@ export const useVotingRoom = (parameters: {
         // Get user address properly - this is crucial for createEncryptedInput
         const userAddress = await ethersSigner.getAddress();
 
-        // Debug logging
-        console.log("🗳️ Starting vote process:", {
-          roomCode,
-          candidateId,
-          userAddress,
-          contractAddress: votingRoomAddress,
-        });
-
         // Let the browser repaint before running 'input.encrypt()' (CPU-costly)
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         // Create encrypted input for vote (value = 1) - follow useFHECounter pattern exactly
-        console.log("🔐 Creating encrypted input...");
         const input = instance.createEncryptedInput(
           votingRoomAddress,
           userAddress
         );
         input.add32(1); // Vote value is always 1
-
-        console.log("⚙️ Encrypting input (this may take a moment)...");
-        console.log("Debug input state:", {
-          contractAddress: votingRoomAddress,
-          userAddress,
-          instanceType: typeof instance,
-          inputType: typeof input,
-        });
-
         // Try encrypting with better error handling
-        let enc;
-        try {
-          // is CPU-intensive (browser may freeze a little when FHE-WASM modules are loading)
-          enc = await input.encrypt();
-        } catch (encryptError: any) {
-          console.error("� Encrypt error details:", {
-            error: encryptError,
-            message: encryptError?.message,
-            stack: encryptError?.stack,
-            cause: encryptError?.cause,
-          });
-
-          // If relayer error, try alternative approach
-          if (encryptError?.message?.includes("extraData")) {
-            console.log("� Retrying with different approach...");
-            // Try creating a fresh input
-            const newInput = instance.createEncryptedInput(
-              votingRoomAddress,
-              userAddress
-            );
-            newInput.add32(1);
-
-            try {
-              enc = await newInput.encrypt();
-              console.log("✅ Retry successful!");
-            } catch (retryError) {
-              console.error("💥 Retry failed:", retryError);
-              throw encryptError; // Throw original error
-            }
-          } else {
-            throw encryptError;
-          }
-        }
-        console.log("✅ Encrypted vote created:", {
-          handle: enc.handles[0],
-          proofLength: enc.inputProof.length,
-        });
-
+        const enc = await input.encrypt();
         setMessage("Casting vote...");
-        console.log("📤 Calling contract.vote with params:", {
-          roomCode,
-          candidateId,
-          encryptedVote: enc.handles[0],
-          inputProofLength: enc.inputProof.length,
-        });
 
         // Call contract - use enc.handles[0] and enc.inputProof directly like useFHECounter
         const tx: ethers.TransactionResponse = await contract.vote(
@@ -508,29 +434,19 @@ export const useVotingRoom = (parameters: {
           enc.handles[0],
           enc.inputProof
         );
-        console.log("⏳ Transaction sent:", tx.hash);
         setMessage(`Waiting for transaction ${tx.hash}...`);
         const receipt = await tx.wait();
 
-        console.log(`Vote cast completed status=${receipt?.status}`);
-
         if (receipt?.status === 1) {
-          console.log("✅ Vote cast successfully!");
           setMessage("Vote cast successfully!");
           return true;
         } else {
-          console.error("❌ Transaction failed:", receipt);
           setMessage("Transaction failed: Vote could not be cast");
           return false;
         }
       } catch (error: unknown) {
         const errorMessage =
           error instanceof Error ? error.message : String(error);
-        console.error("💥 Vote casting error:", {
-          error: errorMessage,
-          roomCode,
-          candidateId,
-        });
         setMessage(`Vote casting failed: ${errorMessage}`);
         return false;
       } finally {
@@ -733,7 +649,6 @@ export const useVotingRoom = (parameters: {
         setIsLoading(true);
         const contract = getReadOnlyContract();
         if (!contract) {
-          console.warn("Contract not available, returning empty rooms array");
           setMessage("Waiting for blockchain connection...");
           return [];
         }
@@ -755,9 +670,6 @@ export const useVotingRoom = (parameters: {
           // If contract call fails, return empty array instead of throwing
           const error = contractError as { code?: string; reason?: string }; // Type assertion for error checking
           if (error?.code === "BAD_DATA" || error?.reason?.includes("decode")) {
-            console.info(
-              "Contract might not have any rooms yet or contract not properly deployed"
-            );
             setMessage("No active rooms found on blockchain");
             return [];
           }

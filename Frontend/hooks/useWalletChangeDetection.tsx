@@ -28,8 +28,6 @@ export const useWalletChangeDetection = ({
     (accounts: string[]) => {
       const newAddress = accounts.length > 0 ? accounts[0] : null;
 
-      console.log("Wallet changed detected:", newAddress);
-
       if (shouldReload) {
         // Add a small delay to ensure state is updated before reload
         setTimeout(() => {

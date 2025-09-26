@@ -311,19 +311,11 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
           errorMsg =
             "One or more candidate images are too large. Please use images smaller than 1MB, or reduce total image size.";
         }
-        console.error("Failed to create room:", {
-          error: errorMsg,
-          contractAddress: votingRoom?.contractAddress || "Not available",
-          ethersSigner: !!ethersSigner,
-          fhevmInstance: !!fhevmInstance,
-          chainId: chainId || "Not available",
-          votingRoomObject: votingRoom ? "Available" : "Null/Undefined",
-        });
+        
         setErrorMessage(`Failed to create room: ${errorMsg}`);
         setShowError(true);
       }
     } catch (error) {
-      console.error("Error creating room:", error);
       const errorMsg =
         error instanceof Error ? error.message : "Unknown error occurred";
       setErrorMessage(`Error creating room: ${errorMsg}`);

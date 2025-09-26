@@ -18,7 +18,7 @@ import {
 import { useVotingRoom } from "@/hooks/useVotingRoom";
 import { useFhevm } from "@/fhevm/useFhevm";
 import { useMetaMaskEthersSigner } from "@/hooks/metamask/useMetaMaskEthersSigner";
-console.log("useVotingRoom", useVotingRoom);
+
 interface Candidate {
   id: string;
   name: string;
@@ -322,7 +322,6 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
 
     try {
       const candidateId = parseInt(selectedCandidate);
-      console.log("🗳️ Casting vote for candidate ID:", candidateId);
 
       const success = await votingRoom.castVote(roomCode, candidateId);
 
@@ -351,12 +350,10 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       } else {
         const errorMessage =
           votingRoom.message || "Unknown error occurred while casting vote";
-        console.error("Failed to cast vote:", errorMessage);
         setErrorMessage(`Vote failed: ${errorMessage}`);
         setShowError(true);
       }
     } catch (error) {
-      console.error("Error casting vote:", error);
       setErrorMessage(`Unexpected error: ${error}`);
       setShowError(true);
     } finally {
@@ -402,7 +399,6 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         setShowError(true);
       }
     } catch (error) {
-      console.error("Error joining room:", error);
       setErrorMessage(`Join error: ${error}`);
       setShowError(true);
     } finally {
