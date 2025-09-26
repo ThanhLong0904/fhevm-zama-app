@@ -77,8 +77,6 @@ export class GaslessTransactionService {
       // - Sending to relayer service
       // - Waiting for relayer to submit transaction
 
-      console.log("Executing gasless transaction:", metaTx);
-
       // Simulate relayer processing time
       await new Promise((resolve) => setTimeout(resolve, 2000));
 
@@ -101,8 +99,6 @@ export class GaslessTransactionService {
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
-      console.error("Gasless transaction error:", errorMessage);
-
       return {
         success: false,
         error: errorMessage,

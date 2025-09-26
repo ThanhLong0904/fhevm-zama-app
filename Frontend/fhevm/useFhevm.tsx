@@ -17,7 +17,7 @@ export function useFhevm(parameters: {
   provider: string | ethers.Eip1193Provider | undefined;
   chainId: number | undefined;
   enabled?: boolean;
-  initialMockChains?: Readonly<Record<number, string>>;  
+  initialMockChains?: Readonly<Record<number, string>>;
 }): {
   instance: FhevmInstance | undefined;
   refresh: () => void;
@@ -149,7 +149,6 @@ export function useFhevm(parameters: {
           _setStatus("ready");
         })
         .catch((e) => {
-          console.log(`Error Was thrown !!! error... ` + e.name);
           if (thisSignal.aborted) return;
 
           // it's not possible to have a _providerRef modified without a prior abort

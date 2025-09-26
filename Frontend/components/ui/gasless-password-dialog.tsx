@@ -124,9 +124,23 @@ export function GaslessPasswordDialog({
           onSuccess();
           onClose();
         } else {
-          setError(
-            gaslessResult.error || "Failed to join room. Please try again."
-          );
+          // Handle different types of errors more gracefully
+          const errorMessage =
+            gaslessResult.error || "Failed to join room. Please try again.";
+
+          // Check if user rejected the transaction
+          if (
+            errorMessage.includes("user rejected action") ||
+            errorMessage.includes("User denied transaction") ||
+            errorMessage.includes("rejected") ||
+            errorMessage.includes("denied")
+          ) {
+            setError(
+              "Transaction was cancelled. Please try again if you want to join the room."
+            );
+          } else {
+            setError(errorMessage);
+          }
           setPassword("");
         }
         setIsJoiningRoom(false);
@@ -167,46 +181,36 @@ export function GaslessPasswordDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit}>
-          <div className="grid gap-4 py-4">
-            <div className="grid grid-cols-4 items-center gap-4">
-              <Label htmlFor="password" className="text-right">
-                Password
-              </Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="col-span-3"
-                placeholder="Enter room password"
-                disabled={isLoading}
-                autoFocus
-                autoComplete="off"
-              />
-            </div>
-
+          <div className="grid gap-2 py-4 ">
+            <Label htmlFor="password" className="text-right text-gray-300">
+              Room Password
+            </Label>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="bg-gray-700/50 border-gray-600/50 text-white placeholder-gray-500"
+              placeholder="Enter room password"
+              disabled={isLoading}
+              autoFocus
+              autoComplete="off"
+            />
             {error && (
-              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">
+              <div className="text-sm text-red-400 bg-red-950/50 border border-red-800/50 rounded p-2">
                 {error}
               </div>
             )}
 
             {/* Success indicator for cached authentication */}
             {successMessage && (
-              <div className="text-sm text-green-600 bg-green-50 border border-green-200 rounded p-2 flex items-center gap-2">
+              <div className="text-sm text-green-400 bg-green-950/50 border border-green-800/50 rounded p-2 flex items-center gap-2">
                 <CheckCircle className="h-4 w-4" />
                 <span>{successMessage}</span>
               </div>
             )}
-
-            {/* Gasless transaction benefit indicator */}
-            <div className="text-xs text-gray-500 bg-green-50 border border-green-200 rounded p-2 flex items-center gap-2">
-              <Zap className="h-3 w-3 text-green-600" />
-              <span>No gas fees required - seamless room entry!</span>
-            </div>
-
             {isJoiningRoom && (
-              <div className="text-sm text-blue-600 bg-blue-50 border border-blue-200 rounded p-2 flex items-center gap-2">
+              <div className="text-sm text-blue-400 bg-blue-950/50 border border-blue-800/50 rounded p-2 flex items-center gap-2">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 <span>Joining room securely...</span>
               </div>
@@ -218,6 +222,7 @@ export function GaslessPasswordDialog({
               type="button"
               variant="outline"
               onClick={handleClose}
+              className="border-gray-600/50 text-gray-300 hover:bg-white/10"
               disabled={isLoading}
             >
               Cancel
@@ -225,7 +230,7 @@ export function GaslessPasswordDialog({
             <Button
               type="submit"
               disabled={isLoading || !password.trim()}
-              className="min-w-[100px]"
+              className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
             >
               {isLoading ? (
                 <>

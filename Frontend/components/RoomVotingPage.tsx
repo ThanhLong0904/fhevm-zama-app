@@ -18,6 +18,8 @@ import {
 import { useVotingRoom } from "@/hooks/useVotingRoom";
 import { useFhevm } from "@/fhevm/useFhevm";
 import { useMetaMaskEthersSigner } from "@/hooks/metamask/useMetaMaskEthersSigner";
+import { GaslessPasswordDialog } from "./ui/gasless-password-dialog";
+import { VotingRoomAddresses } from "@/abi/VotingRoomAddresses";
 
 interface Candidate {
   id: string;
@@ -67,6 +69,30 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   const [isLoadingUserStatus, setIsLoadingUserStatus] = useState(true);
   const hasLoadedRef = useRef(false);
 
+  // Password verification states
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false);
+  const [isPasswordVerified, setIsPasswordVerified] = useState(false);
+  const [isReloadingUserStatus, setIsReloadingUserStatus] = useState(false);
+
+  // Function to reload user status after joining room
+  const reloadUserStatus = async () => {
+    if (!roomCode || !ethersSigner) return;
+    setIsReloadingUserStatus(true);
+    const { hasVoted: userHasVoted, isParticipant: userIsParticipant } =
+      await votingRoom.checkVotingStatus(roomCode);
+    setHasVoted(userHasVoted);
+    setIsParticipant(userIsParticipant);
+    setShowResults(userHasVoted);
+    if (userHasVoted && ethersSigner?.address) {
+      const storageKey = `votedCandidate_${roomCode}_${ethersSigner.address}`;
+      const storedVotedCandidate = localStorage.getItem(storageKey);
+      if (storedVotedCandidate) {
+        setVotedCandidate(storedVotedCandidate);
+      }
+    }
+    setIsReloadingUserStatus(false);
+  };
+
   // FHE and Web3 hooks
   const {
     provider,
@@ -96,6 +122,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       setIsLoadingUserStatus(true); // Reset user status loading
       setVotedCandidate(null); // Reset voted candidate when wallet changes
       setSelectedCandidate(null); // Reset selected candidate when wallet changes
+      setIsPasswordVerified(false); // Reset password verification when wallet changes
+      setIsReloadingUserStatus(false); // Reset reloading status when wallet changes
     }
   }, [ethersSigner]);
 
@@ -105,6 +133,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     hasLoadedRef.current = false;
     setVotedCandidate(null); // Reset voted candidate when room changes
     setSelectedCandidate(null); // Reset selected candidate when room changes
+    setIsPasswordVerified(false); // Reset password verification when room changes
+    setIsReloadingUserStatus(false); // Reset reloading status when room changes
   }, [roomCode]);
 
   // Load room data on component mount
@@ -518,39 +548,85 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
               </div>
 
               {/* Voting Progress */}
-              <Card className="bg-gray-800/50 border-gray-700/50 mb-8">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm text-gray-400">
-                      Voting Progress
-                    </span>
-                    <span className="text-sm text-gray-400">
-                      {(room && room.maxParticipants > 0) ||
-                      currentParticipants > 0
-                        ? Math.round(
-                            (currentVoters / room.maxParticipants) * 100
-                          )
-                        : 0}
-                      % ({currentVoters} / {room?.maxParticipants} voted)
-                    </span>
-                  </div>
-                  <Progress
-                    value={
-                      (room && room.maxParticipants > 0) ||
-                      currentParticipants > 0
-                        ? (currentVoters / room.maxParticipants) * 100
-                        : 0
-                    }
-                    className="h-2"
-                  />
-                </CardContent>
-              </Card>
+              {/* Only show voting progress if room doesn't have password or password is verified or user is participant */}
+              {!room.hasPassword || isPasswordVerified || isParticipant ? (
+                <Card className="bg-gray-800/50 border-gray-700/50 mb-8">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-sm text-gray-400">
+                        Voting Progress
+                      </span>
+                      <span className="text-sm text-gray-400">
+                        {(room && room.maxParticipants > 0) ||
+                        currentParticipants > 0
+                          ? Math.round(
+                              (currentVoters / room.maxParticipants) * 100
+                            )
+                          : 0}
+                        % ({currentVoters} / {room?.maxParticipants} voted)
+                      </span>
+                    </div>
+                    <Progress
+                      value={
+                        (room && room.maxParticipants > 0) ||
+                        currentParticipants > 0
+                          ? (currentVoters / room.maxParticipants) * 100
+                          : 0
+                      }
+                      className="h-2"
+                    />
+                  </CardContent>
+                </Card>
+              ) : (
+                // Show skeleton for voting progress when password is required
+                <Card className="bg-gray-800/50 border-gray-700/50 mb-8">
+                  <CardContent className="p-4">
+                    <div className="animate-pulse">
+                      <div className="h-4 bg-gray-700 rounded w-1/3 mb-2"></div>
+                      <div className="h-2 bg-gray-700 rounded"></div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Room Status Messages - Only show one at a time based on priority */}
               {(() => {
                 // Don't show any banner while loading user status to prevent flicker
                 if (isLoadingUserStatus) {
                   return null;
+                }
+
+                // Priority 0: Password protection (highest priority)
+                // Only show if room has password AND user is not verified AND not already a participant
+                if (room.hasPassword && !isPasswordVerified && !isParticipant) {
+                  return (
+                    <Card className="bg-yellow-500/10 border-yellow-500/30 mb-8">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-yellow-500/20 rounded-full">
+                              <Shield className="w-5 h-5 text-yellow-400" />
+                            </div>
+                            <div>
+                              <div className="text-yellow-400 font-semibold">
+                                This room is password protected
+                              </div>
+                              <div className="text-sm text-yellow-300/70">
+                                Please enter the password to view and
+                                participate in this room
+                              </div>
+                            </div>
+                          </div>
+                          <Button
+                            onClick={() => setShowPasswordDialog(true)}
+                            className="bg-yellow-500 hover:bg-yellow-600 text-black"
+                          >
+                            Join Room
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
                 }
 
                 // Priority 1: Room ended
@@ -631,6 +707,14 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                 }
 
                 // Priority 5: User needs to join
+                // Don't show if password is verified (user is in the process of joining) or if we're reloading user status
+                if (
+                  room.hasPassword &&
+                  (isPasswordVerified || isReloadingUserStatus)
+                ) {
+                  return null; // Don't show join banner if password is verified or reloading
+                }
+
                 return (
                   <Card className="bg-yellow-500/10 border-yellow-500/30 mb-8">
                     <CardContent className="p-4">
@@ -662,183 +746,213 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
               })()}
 
               {/* Candidates */}
-              <div className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-2xl text-white">Candidates</h2>
-                  {showResults && (
-                    <div className="flex items-center gap-2 text-sm text-gray-400">
-                      <Eye className="w-4 h-4" />
-                      ResultsCurrent
+              {/* Only show candidates if room doesn't have password or password is verified or user is participant */}
+              {!room.hasPassword || isPasswordVerified || isParticipant ? (
+                <div className="space-y-6">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-2xl text-white">Candidates</h2>
+                    {showResults && (
+                      <div className="flex items-center gap-2 text-sm text-gray-400">
+                        <Eye className="w-4 h-4" />
+                        ResultsCurrent
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {candidates.map((candidate) => {
+                      const isSelected = selectedCandidate === candidate.id;
+                      const isVotedFor =
+                        hasVoted && votedCandidate === candidate.id;
+                      const isWinner =
+                        showResults && candidate.id === getWinner().id;
+
+                      return (
+                        <Card
+                          key={candidate.id}
+                          className={`transition-all duration-300 ${
+                            hasVoted || !isParticipant
+                              ? " bg-gray-800/50 border-gray-700/50"
+                              : isSelected
+                              ? "cursor-pointer bg-blue-500/20 border-blue-500/50 shadow-lg shadow-blue-500/20"
+                              : "cursor-pointer bg-gray-800/50 border-gray-700/50 hover:bg-gray-700/50 hover:border-gray-600/50"
+                          } ${
+                            isVotedFor
+                              ? "bg-green-500/20 border-green-500/50 ring-2 ring-green-500/30"
+                              : ""
+                          } ${isWinner ? "ring-2 ring-yellow-500/50" : ""}`}
+                          onClick={() =>
+                            !hasVoted &&
+                            isParticipant &&
+                            setSelectedCandidate(candidate.id)
+                          }
+                        >
+                          <CardContent className="p-6">
+                            <div className="flex gap-4">
+                              <div className="relative">
+                                <ImageWithFallback
+                                  src={candidate.image}
+                                  alt={candidate.name}
+                                  className="w-16 h-16 rounded-lg object-cover"
+                                />
+                                {isWinner && (
+                                  <div className="absolute -top-2 -right-2 p-1 bg-yellow-500 rounded-full">
+                                    <Trophy className="w-4 h-4 text-yellow-900" />
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="flex-1">
+                                <div className="flex items-start justify-between mb-2">
+                                  <h3 className="text-white text-lg">
+                                    {candidate.name}
+                                  </h3>
+                                  <div className="flex gap-2">
+                                    {isSelected && !hasVoted && (
+                                      <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
+                                        Selected
+                                      </Badge>
+                                    )}
+                                    {isVotedFor && (
+                                      <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
+                                        Your Vote
+                                      </Badge>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <p className="text-gray-400 text-sm mb-3">
+                                  {candidate.description}
+                                </p>
+
+                                {showResults && (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between text-sm">
+                                      <span className="text-gray-400">
+                                        <span className="text-gray-400">
+                                          {candidate.votes} votes
+                                        </span>
+                                      </span>
+                                      <span className="text-gray-400">
+                                        {candidate.percentage.toFixed(1)}%
+                                      </span>
+                                    </div>
+                                    <Progress
+                                      value={candidate.percentage}
+                                      className="h-2"
+                                    />
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+
+                  {/* Vote Button */}
+                  {room.isActive && !hasVoted && (
+                    <div className="text-center">
+                      <Button
+                        onClick={handleVote}
+                        disabled={
+                          !selectedCandidate ||
+                          isVoting ||
+                          !isParticipant ||
+                          (currentParticipants >= room.maxParticipants &&
+                            !isParticipant)
+                        }
+                        className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:opacity-50"
+                      >
+                        {isVoting ? (
+                          <>
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
+                            Processing Vote...
+                          </>
+                        ) : !isParticipant ? (
+                          currentParticipants >= room.maxParticipants ? (
+                            "Room Full"
+                          ) : (
+                            "Join Room First"
+                          )
+                        ) : !selectedCandidate ? (
+                          "Select a Candidate"
+                        ) : (
+                          <>
+                            <Vote className="w-5 h-5 mr-2" />
+                            Cast Your Vote
+                          </>
+                        )}
+                      </Button>
+                      {selectedCandidate && isParticipant && room.isActive && (
+                        <p className="text-sm text-gray-400 mt-2">
+                          You are voting for:{" "}
+                          <span className="text-white">
+                            {
+                              candidates.find((c) => c.id === selectedCandidate)
+                                ?.name
+                            }
+                          </span>
+                        </p>
+                      )}
+                      {!room.isActive && (
+                        <p className="text-sm text-red-400 mt-2">
+                          Voting has ended for this room
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Information for when voting is done */}
+                  {hasVoted && (
+                    <div className="text-center">
+                      <div className="text-gray-400 text-sm">
+                        {room.isActive
+                          ? "You have successfully voted. Results will be published when voting ends."
+                          : "You have voted and results are now available above."}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Information for when room has ended but user hasn't voted */}
+                  {!room.isActive && !hasVoted && (
+                    <div className="text-center">
+                      <div className="text-red-400 text-sm">
+                        This voting room has ended. You can view the results but
+                        cannot vote.
+                      </div>
                     </div>
                   )}
                 </div>
-
-                <div className="grid md:grid-cols-2 gap-6">
-                  {candidates.map((candidate) => {
-                    const isSelected = selectedCandidate === candidate.id;
-                    const isVotedFor =
-                      hasVoted && votedCandidate === candidate.id;
-                    const isWinner =
-                      showResults && candidate.id === getWinner().id;
-
-                    return (
+              ) : (
+                // Show skeleton loading when password is required but not verified
+                <div className="space-y-6">
+                  <h2 className="text-2xl text-white">Candidates</h2>
+                  <div className="grid md:grid-cols-2 gap-6">
+                    {Array.from({ length: 4 }).map((_, index) => (
                       <Card
-                        key={candidate.id}
-                        className={`transition-all duration-300 ${
-                          hasVoted || !isParticipant
-                            ? " bg-gray-800/50 border-gray-700/50"
-                            : isSelected
-                            ? "cursor-pointer bg-blue-500/20 border-blue-500/50 shadow-lg shadow-blue-500/20"
-                            : "cursor-pointer bg-gray-800/50 border-gray-700/50 hover:bg-gray-700/50 hover:border-gray-600/50"
-                        } ${
-                          isVotedFor
-                            ? "bg-green-500/20 border-green-500/50 ring-2 ring-green-500/30"
-                            : ""
-                        } ${isWinner ? "ring-2 ring-yellow-500/50" : ""}`}
-                        onClick={() =>
-                          !hasVoted &&
-                          isParticipant &&
-                          setSelectedCandidate(candidate.id)
-                        }
+                        key={index}
+                        className="bg-gray-800/50 border-gray-700/50"
                       >
-                        <CardContent className="p-6">
-                          <div className="flex gap-4">
-                            <div className="relative">
-                              <ImageWithFallback
-                                src={candidate.image}
-                                alt={candidate.name}
-                                className="w-16 h-16 rounded-lg object-cover"
-                              />
-                              {isWinner && (
-                                <div className="absolute -top-2 -right-2 p-1 bg-yellow-500 rounded-full">
-                                  <Trophy className="w-4 h-4 text-yellow-900" />
-                                </div>
-                              )}
-                            </div>
-
-                            <div className="flex-1">
-                              <div className="flex items-start justify-between mb-2">
-                                <h3 className="text-white text-lg">
-                                  {candidate.name}
-                                </h3>
-                                <div className="flex gap-2">
-                                  {isSelected && !hasVoted && (
-                                    <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30">
-                                      Selected
-                                    </Badge>
-                                  )}
-                                  {isVotedFor && (
-                                    <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                                      Your Vote
-                                    </Badge>
-                                  )}
-                                </div>
-                              </div>
-
-                              <p className="text-gray-400 text-sm mb-3">
-                                {candidate.description}
-                              </p>
-
-                              {showResults && (
-                                <div className="space-y-2">
-                                  <div className="flex items-center justify-between text-sm">
-                                    <span className="text-gray-400">
-                                      <span className="text-gray-400">
-                                        {candidate.votes} votes
-                                      </span>
-                                    </span>
-                                    <span className="text-gray-400">
-                                      {candidate.percentage.toFixed(1)}%
-                                    </span>
-                                  </div>
-                                  <Progress
-                                    value={candidate.percentage}
-                                    className="h-2"
-                                  />
-                                </div>
-                              )}
-                            </div>
+                        <CardHeader>
+                          <div className="animate-pulse">
+                            <div className="h-4 bg-gray-700 rounded w-3/4 mb-2"></div>
+                            <div className="h-3 bg-gray-700 rounded w-1/2"></div>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="animate-pulse space-y-3">
+                            <div className="h-3 bg-gray-700 rounded"></div>
+                            <div className="h-3 bg-gray-700 rounded w-5/6"></div>
+                            <div className="h-8 bg-gray-700 rounded"></div>
                           </div>
                         </CardContent>
                       </Card>
-                    );
-                  })}
+                    ))}
+                  </div>
                 </div>
-
-                {/* Vote Button */}
-                {room.isActive && !hasVoted && (
-                  <div className="text-center">
-                    <Button
-                      onClick={handleVote}
-                      disabled={
-                        !selectedCandidate ||
-                        isVoting ||
-                        !isParticipant ||
-                        (currentParticipants >= room.maxParticipants &&
-                          !isParticipant)
-                      }
-                      className="px-8 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 disabled:opacity-50"
-                    >
-                      {isVoting ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2"></div>
-                          Processing Vote...
-                        </>
-                      ) : !isParticipant ? (
-                        currentParticipants >= room.maxParticipants ? (
-                          "Room Full"
-                        ) : (
-                          "Join Room First"
-                        )
-                      ) : !selectedCandidate ? (
-                        "Select a Candidate"
-                      ) : (
-                        <>
-                          <Vote className="w-5 h-5 mr-2" />
-                          Cast Your Vote
-                        </>
-                      )}
-                    </Button>
-                    {selectedCandidate && isParticipant && room.isActive && (
-                      <p className="text-sm text-gray-400 mt-2">
-                        You are voting for:{" "}
-                        <span className="text-white">
-                          {
-                            candidates.find((c) => c.id === selectedCandidate)
-                              ?.name
-                          }
-                        </span>
-                      </p>
-                    )}
-                    {!room.isActive && (
-                      <p className="text-sm text-red-400 mt-2">
-                        Voting has ended for this room
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Information for when voting is done */}
-                {hasVoted && (
-                  <div className="text-center">
-                    <div className="text-gray-400 text-sm">
-                      {room.isActive
-                        ? "You have successfully voted. Results will be published when voting ends."
-                        : "You have voted and results are now available above."}
-                    </div>
-                  </div>
-                )}
-
-                {/* Information for when room has ended but user hasn't voted */}
-                {!room.isActive && !hasVoted && (
-                  <div className="text-center">
-                    <div className="text-red-400 text-sm">
-                      This voting room has ended. You can view the results but
-                      cannot vote.
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
             </div>
 
             {/* Sidebar */}
@@ -1031,6 +1145,44 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
           </div>
         </div>
       </div>
+
+      {/* Password Dialog */}
+      <GaslessPasswordDialog
+        isOpen={showPasswordDialog}
+        onClose={() => setShowPasswordDialog(false)}
+        onSuccess={() => {
+          setIsPasswordVerified(true);
+          setShowPasswordDialog(false);
+          // Reload user status to update participant status
+          reloadUserStatus();
+        }}
+        roomCode={room?.code || ""}
+        roomTitle={room?.title || ""}
+        roomValidationFunctions={{
+          checkParticipantStatus:
+            votingRoom.checkVotingStatus ||
+            (async () => ({
+              isParticipant: false,
+              hasVoted: false,
+            })),
+          getRoomPasswordHash:
+            votingRoom.getRoomPasswordHash ||
+            (async () => ({
+              hasPassword: false,
+              passwordHash: null,
+            })),
+          validatePasswordLocally:
+            votingRoom.validatePasswordLocally || (() => false),
+        }}
+        signer={ethersSigner}
+        contractAddress={(() => {
+          const chainIdStr = chainId?.toString() || "31337";
+          return (
+            VotingRoomAddresses[chainIdStr as keyof typeof VotingRoomAddresses]
+              ?.address || "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+          );
+        })()}
+      />
     </div>
   );
 }
