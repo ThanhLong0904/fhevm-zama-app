@@ -35,9 +35,10 @@ contract VotingRoom is SepoliaConfig {
     mapping(string roomCode => mapping(uint256 candidateId => Candidate candidate)) public roomCandidates;
     mapping(string roomCode => mapping(address voter => bool voted)) public hasVoted;
     mapping(string roomCode => mapping(address user => bool participant)) public isParticipant;
+    mapping(string roomCode => uint256) public totalVotes; // Track total votes per room
     string[] public roomCodes; // Array to track all room codes
     mapping(string roomCode => uint256 index) public roomCodeIndex; // Index of room code in array
-    
+
     // Events
     event RoomCreated(string indexed roomCode, address indexed creator, string title);
     event VoteCast(string indexed roomCode, address indexed voter);
@@ -138,8 +139,7 @@ contract VotingRoom is SepoliaConfig {
         require(endTime > block.timestamp, "End time must be in the future");
         require(maxParticipants > 0, "Max participants must be > 0");
         require(
-            candidateNames.length == candidateDescriptions.length && 
-            candidateNames.length == candidateImageUrls.length, 
+            candidateNames.length == candidateDescriptions.length && candidateNames.length == candidateImageUrls.length,
             "Arrays length mismatch"
         );
         require(candidateNames.length >= 2, "At least 2 candidates required");
@@ -170,12 +170,12 @@ contract VotingRoom is SepoliaConfig {
         // Add all candidates in the same transaction
         for (uint256 i = 0; i < candidateNames.length; i++) {
             uint256 candidateId = rooms[roomCode].candidateCount;
-            
+
             // Initialize encrypted zero with proper permissions
             euint32 initialVotes = FHE.asEuint32(0);
             FHE.allowThis(initialVotes);
             FHE.allow(initialVotes, msg.sender); // Allow creator to decrypt
-            
+
             roomCandidates[roomCode][candidateId] = Candidate({
                 name: candidateNames[i],
                 description: candidateDescriptions[i],
@@ -205,12 +205,12 @@ contract VotingRoom is SepoliaConfig {
         require(rooms[roomCode].isActive, "Room is not active");
 
         uint256 candidateId = rooms[roomCode].candidateCount;
-        
+
         // Initialize encrypted zero with proper permissions
         euint32 initialVotes = FHE.asEuint32(0);
         FHE.allowThis(initialVotes);
         FHE.allow(initialVotes, msg.sender); // Allow creator to decrypt
-        
+
         roomCandidates[roomCode][candidateId] = Candidate({
             name: name,
             description: description,
@@ -240,12 +240,12 @@ contract VotingRoom is SepoliaConfig {
 
         for (uint256 i = 0; i < names.length; i++) {
             uint256 candidateId = rooms[roomCode].candidateCount;
-            
+
             // Initialize encrypted zero with proper permissions
             euint32 initialVotes = FHE.asEuint32(0);
             FHE.allowThis(initialVotes);
             FHE.allow(initialVotes, msg.sender); // Allow creator to decrypt
-            
+
             roomCandidates[roomCode][candidateId] = Candidate({
                 name: names[i],
                 description: descriptions[i],
@@ -261,11 +261,10 @@ contract VotingRoom is SepoliaConfig {
     /// @notice Joins a room (with optional password)
     /// @param roomCode Room identifier
     /// @param password Plain text password (if required)
-    function joinRoom(string memory roomCode, string memory password) 
-        external 
-        roomExists(roomCode) 
-        roomActive(roomCode) 
-    {
+    function joinRoom(
+        string memory roomCode,
+        string memory password
+    ) external roomExists(roomCode) roomActive(roomCode) {
         require(!isParticipant[roomCode][msg.sender], "Already a participant");
         require(rooms[roomCode].participantCount < rooms[roomCode].maxParticipants, "Room is full");
 
@@ -291,21 +290,16 @@ contract VotingRoom is SepoliaConfig {
         uint256 candidateId,
         externalEuint32 encryptedVote,
         bytes calldata inputProof
-    ) external 
-        roomExists(roomCode) 
-        roomActive(roomCode) 
-        isRoomParticipant(roomCode) 
-        hasNotVoted(roomCode) 
-    {
+    ) external roomExists(roomCode) roomActive(roomCode) isRoomParticipant(roomCode) hasNotVoted(roomCode) {
         require(candidateId < rooms[roomCode].candidateCount, "Invalid candidate");
         require(roomCandidates[roomCode][candidateId].exists, "Candidate does not exist");
 
         // Convert external encrypted input to internal
         euint32 encryptedVoteValue = FHE.fromExternal(encryptedVote, inputProof);
-        
+
         // Add the vote to the candidate's vote count
         roomCandidates[roomCode][candidateId].votes = FHE.add(
-            roomCandidates[roomCode][candidateId].votes, 
+            roomCandidates[roomCode][candidateId].votes,
             encryptedVoteValue
         );
 
@@ -317,6 +311,9 @@ contract VotingRoom is SepoliaConfig {
         // Mark as voted
         hasVoted[roomCode][msg.sender] = true;
 
+        // Increment total vote count for this room
+        totalVotes[roomCode]++;
+
         emit VoteCast(roomCode, msg.sender);
     }
 
@@ -324,12 +321,10 @@ contract VotingRoom is SepoliaConfig {
     /// @param roomCode Room identifier
     /// @param candidateId Candidate index
     /// @return Encrypted vote count
-    function getCandidateVotes(string memory roomCode, uint256 candidateId) 
-        external 
-        view 
-        roomExists(roomCode) 
-        returns (euint32) 
-    {
+    function getCandidateVotes(
+        string memory roomCode,
+        uint256 candidateId
+    ) external view roomExists(roomCode) returns (euint32) {
         require(candidateId < rooms[roomCode].candidateCount, "Invalid candidate");
         return roomCandidates[roomCode][candidateId].votes;
     }
@@ -337,12 +332,7 @@ contract VotingRoom is SepoliaConfig {
     /// @notice Gets room information
     /// @param roomCode Room identifier
     /// @return Room struct
-    function getRoom(string memory roomCode) 
-        external 
-        view 
-        roomExists(roomCode) 
-        returns (Room memory) 
-    {
+    function getRoom(string memory roomCode) external view roomExists(roomCode) returns (Room memory) {
         return rooms[roomCode];
     }
 
@@ -352,7 +342,10 @@ contract VotingRoom is SepoliaConfig {
     /// @return name Candidate name
     /// @return description Candidate description
     /// @return imageUrl Candidate image URL
-    function getCandidate(string memory roomCode, uint256 candidateId)
+    function getCandidate(
+        string memory roomCode,
+        uint256 candidateId
+    )
         external
         view
         roomExists(roomCode)
@@ -377,12 +370,7 @@ contract VotingRoom is SepoliaConfig {
     /// @param roomCode Room identifier
     /// @param user User address
     /// @return Whether the user has voted
-    function hasUserVoted(string memory roomCode, address user) 
-        external 
-        view 
-        roomExists(roomCode) 
-        returns (bool) 
-    {
+    function hasUserVoted(string memory roomCode, address user) external view roomExists(roomCode) returns (bool) {
         return hasVoted[roomCode][user];
     }
 
@@ -390,13 +378,15 @@ contract VotingRoom is SepoliaConfig {
     /// @param roomCode Room identifier
     /// @param user User address
     /// @return Whether the user is a participant
-    function isUserParticipant(string memory roomCode, address user) 
-        external 
-        view 
-        roomExists(roomCode) 
-        returns (bool) 
-    {
+    function isUserParticipant(string memory roomCode, address user) external view roomExists(roomCode) returns (bool) {
         return isParticipant[roomCode][user];
+    }
+
+    /// @notice Gets the total number of votes cast in a room
+    /// @param roomCode Room identifier
+    /// @return Total number of votes cast
+    function getTotalVotes(string memory roomCode) external view roomExists(roomCode) returns (uint256) {
+        return totalVotes[roomCode];
     }
 
     /// @notice Gets the total number of rooms
@@ -415,25 +405,25 @@ contract VotingRoom is SepoliaConfig {
     /// @return Array of active room codes
     function getActiveRooms() external view returns (string[] memory) {
         uint256 activeCount = 0;
-        
+
         // Count active rooms
         for (uint256 i = 0; i < roomCodes.length; i++) {
             if (rooms[roomCodes[i]].isActive && rooms[roomCodes[i]].endTime > block.timestamp) {
                 activeCount++;
             }
         }
-        
+
         // Create array of active room codes
         string[] memory activeRooms = new string[](activeCount);
         uint256 currentIndex = 0;
-        
+
         for (uint256 i = 0; i < roomCodes.length; i++) {
             if (rooms[roomCodes[i]].isActive && rooms[roomCodes[i]].endTime > block.timestamp) {
                 activeRooms[currentIndex] = roomCodes[i];
                 currentIndex++;
             }
         }
-        
+
         return activeRooms;
     }
 
@@ -442,30 +432,26 @@ contract VotingRoom is SepoliaConfig {
     /// @param limit Maximum number of rooms to return
     /// @return roomCodes Array of room codes
     /// @return hasMore Whether there are more rooms available
-    function getRoomsPaginated(uint256 offset, uint256 limit) 
-        external 
-        view 
-        returns (string[] memory, bool) 
-    {
+    function getRoomsPaginated(uint256 offset, uint256 limit) external view returns (string[] memory, bool) {
         require(limit > 0, "Limit must be greater than 0");
-        
+
         uint256 totalRooms = roomCodes.length;
-        
+
         if (offset >= totalRooms) {
             return (new string[](0), false);
         }
-        
+
         uint256 remainingRooms = totalRooms - offset;
         uint256 returnCount = remainingRooms > limit ? limit : remainingRooms;
-        
+
         string[] memory paginatedRooms = new string[](returnCount);
-        
+
         for (uint256 i = 0; i < returnCount; i++) {
             paginatedRooms[i] = roomCodes[offset + i];
         }
-        
+
         bool hasMore = offset + returnCount < totalRooms;
-        
+
         return (paginatedRooms, hasMore);
     }
 }

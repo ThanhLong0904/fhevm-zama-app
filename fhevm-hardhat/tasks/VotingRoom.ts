@@ -244,6 +244,10 @@ task("task:voting-get-room", "Gets room information")
       console.log(`Candidates: ${room.candidateCount}`);
       console.log(`Has Password: ${room.hasPassword}`);
 
+      // Get total votes
+      const totalVotes = await votingRoomContract.getTotalVotes(taskArguments.code);
+      console.log(`Total Votes: ${totalVotes}`);
+
       // Get candidate information
       if (Number(room.candidateCount) > 0) {
         console.log("\n=== Candidates ===");
@@ -419,6 +423,32 @@ task("task:voting-vote-as", "Casts a vote for a candidate using specific signer"
       );
     } catch (error) {
       console.error("Failed to cast vote:", error);
+    }
+  });
+
+/**
+ * Get total votes for a room
+ * Example: npx hardhat --network localhost task:voting-get-total-votes --code "ROOM001"
+ */
+task("task:voting-get-total-votes", "Gets total votes for a room")
+  .addOptionalParam("address", "Optionally specify the VotingRoom contract address")
+  .addParam("code", "Room code")
+  .setAction(async function (taskArguments: TaskArguments, hre) {
+    const { ethers, deployments } = hre;
+
+    const VotingRoomDeployment = taskArguments.address
+      ? { address: taskArguments.address }
+      : await deployments.get("VotingRoom");
+    console.log(`VotingRoom: ${VotingRoomDeployment.address}`);
+
+    const signers = await ethers.getSigners();
+    const votingRoomContract = await ethers.getContractAt("VotingRoom", VotingRoomDeployment.address);
+
+    try {
+      const totalVotes = await votingRoomContract.getTotalVotes(taskArguments.code);
+      console.log(`Total votes in room ${taskArguments.code}: ${totalVotes}`);
+    } catch (error) {
+      console.error("Failed to get total votes:", error);
     }
   });
 

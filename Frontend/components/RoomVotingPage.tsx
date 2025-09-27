@@ -90,6 +90,15 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         setVotedCandidate(storedVotedCandidate);
       }
     }
+    
+    // Also reload actual vote count
+    try {
+      const actualVoteCount = await votingRoom.getTotalVotes(roomCode);
+      setCurrentVoters(actualVoteCount);
+    } catch (error) {
+      console.warn("Failed to get total votes in reloadUserStatus:", error);
+    }
+    
     setIsReloadingUserStatus(false);
   };
 
@@ -203,17 +212,23 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
           }
         }
 
-        // Estimate current voters (this is approximate since we don't have exact count from contract)
-        // For now, assume 60-80% of participants have voted if room is active
-        if (roomInfo && roomInfo.isActive) {
-          const estimatedVoterPercentage = 0.7; // 70% assumption
-          const estimatedVoters = Math.floor(
-            roomInfo.participantCount * estimatedVoterPercentage
-          );
-          setCurrentVoters(estimatedVoters);
-        } else if (roomInfo && !roomInfo.isActive) {
-          // If room ended, assume all participants voted
-          setCurrentVoters(roomInfo.participantCount);
+        // Get actual vote count from smart contract
+        try {
+          const actualVoteCount = await votingRoom.getTotalVotes(roomCode);
+          setCurrentVoters(actualVoteCount);
+        } catch (error) {
+          console.warn("Failed to get total votes, falling back to estimation:", error);
+          // Fallback to estimation if contract call fails
+          if (roomInfo && roomInfo.isActive) {
+            const estimatedVoterPercentage = 0.7; // 70% assumption
+            const estimatedVoters = Math.floor(
+              roomInfo.participantCount * estimatedVoterPercentage
+            );
+            setCurrentVoters(estimatedVoters);
+          } else if (roomInfo && !roomInfo.isActive) {
+            // If room ended, assume all participants voted
+            setCurrentVoters(roomInfo.participantCount);
+          }
         }
 
         // Mark loading as complete
@@ -239,6 +254,14 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         if (roomInfo) {
           // Update participant count
           setCurrentParticipants(roomInfo.participantCount);
+          
+          // Update actual vote count
+          try {
+            const actualVoteCount = await votingRoom.getTotalVotes(roomCode);
+            setCurrentVoters(actualVoteCount);
+          } catch (error) {
+            console.warn("Failed to get total votes in updateVotingResults:", error);
+          }
         }
 
         // For FHE voting, results are only visible after voting ends
@@ -358,7 +381,15 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       if (success) {
         setHasVoted(true);
         setVotedCandidate(selectedCandidate); // Lưu candidate đã vote
-        setCurrentVoters((prev) => prev + 1);
+        
+        // Get updated vote count from smart contract instead of local increment
+        try {
+          const updatedVoteCount = await votingRoom.getTotalVotes(roomCode);
+          setCurrentVoters(updatedVoteCount);
+        } catch (error) {
+          console.warn("Failed to get updated vote count, using local increment:", error);
+          setCurrentVoters((prev) => prev + 1);
+        }
 
         // Save voted candidate to localStorage for persistence
         if (ethersSigner?.address && roomCode) {

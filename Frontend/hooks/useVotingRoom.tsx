@@ -565,6 +565,23 @@ export const useVotingRoom = (parameters: {
     [getReadOnlyContract, ethersSigner]
   );
 
+  // Get total votes for a room
+  const getTotalVotes = useCallback(async (roomCode: string): Promise<number> => {
+    try {
+      const contract = getReadOnlyContract();
+      if (!contract) {
+        throw new Error("Contract not available");
+      }
+
+      const totalVotes = await contract.getTotalVotes(roomCode);
+      return Number(totalVotes);
+    } catch (error) {
+      console.error("Error getting total votes:", error);
+      setMessage("Failed to get total votes");
+      return 0;
+    }
+  }, [getReadOnlyContract]);
+
   // Get total rooms count
   const getTotalRoomsCount = useCallback(async (): Promise<number> => {
     try {
@@ -807,6 +824,7 @@ export const useVotingRoom = (parameters: {
     checkVotingStatus,
 
     // Room enumeration
+    getTotalVotes,
     getTotalRoomsCount,
     getAllRoomCodes,
     getActiveRooms,

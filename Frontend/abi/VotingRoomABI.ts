@@ -441,6 +441,25 @@ export const VotingRoomABI = {
       "type": "function"
     },
     {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        }
+      ],
+      "name": "getTotalVotes",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
       "inputs": [],
       "name": "getTotalRoomsCount",
       "outputs": [
