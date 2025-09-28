@@ -1,23 +1,25 @@
 "use client";
 import { DashboardPage } from "@/components/DashboardPage";
+import { useRouter } from "next/navigation";
 
 export default function Dashboard() {
+  const router = useRouter();
   const handleNavigate = (page: string, data?: { roomCode?: string }) => {
     switch (page) {
       case "home":
-        window.location.href = "/";
+        router.push("/");
         break;
       case "create":
-        window.location.href = "/create-room";
+        router.push("/create-room");
         break;
-      case "room":
+      case "voting":
         if (data?.roomCode) {
-          window.location.href = `/room?code=${data.roomCode}`;
+          router.push(`/room/${data.roomCode}`);
         }
 
         break;
       default:
-        window.location.href = "/";
+        router.push("/");
     }
   };
 
