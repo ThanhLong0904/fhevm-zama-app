@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "./ui/card";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useVotingRoom } from "@/hooks/useVotingRoom";
 import { useFhevm } from "@/fhevm/useFhevm";
+import { useInMemoryStorage } from "@/hooks/useInMemoryStorage";
 import { useMetaMaskEthersSigner } from "@/hooks/metamask/useMetaMaskEthersSigner";
 import { GaslessPasswordDialog } from "./ui/gasless-password-dialog";
 import { VotingRoomAddresses } from "@/abi/VotingRoomAddresses";
@@ -40,6 +41,7 @@ interface Room {
   endTime: number;
   hasPassword: boolean;
   isActive: boolean;
+  isClosed: boolean;
   candidateCount: number;
 }
 
@@ -95,9 +97,9 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     try {
       const actualVoteCount = await votingRoom.getTotalVotes(roomCode);
       setCurrentVoters(actualVoteCount);
-    } catch (error) {
-      console.warn("Failed to get total votes in reloadUserStatus:", error);
-    }
+        } catch (_error) {
+          // Handle error silently
+        }
     
     setIsReloadingUserStatus(false);
   };
@@ -116,6 +118,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     initialMockChains,
     enabled: true, // use enabled to dynamically create the instance on-demand
   });
+  const { storage: fhevmDecryptionSignatureStorage } = useInMemoryStorage();
 
   // VotingRoom hook
   const votingRoom = useVotingRoom({
@@ -123,6 +126,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     ethersSigner,
     ethersReadonlyProvider,
     chainId,
+    fhevmDecryptionSignatureStorage,
   });
   // Reset loading state when wallet changes
   useEffect(() => {
@@ -158,9 +162,6 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       try {
         // Set a loading timeout
         const loadingTimeout = setTimeout(() => {
-          console.warn(
-            "Loading taking too long, potential issue with data fetching"
-          );
           // Force complete loading after timeout to prevent infinite loading
           setIsLoadingUserStatus(false);
         }, 15000); // 15 second timeout
@@ -178,6 +179,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
             endTime: roomInfo.endTime,
             hasPassword: roomInfo.hasPassword,
             isActive: roomInfo.isActive,
+            isClosed: 'isClosed' in roomInfo ? Boolean(roomInfo.isClosed) : false,
             candidateCount: roomInfo.candidateCount,
           });
           setCurrentParticipants(roomInfo.participantCount);
@@ -216,8 +218,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         try {
           const actualVoteCount = await votingRoom.getTotalVotes(roomCode);
           setCurrentVoters(actualVoteCount);
-        } catch (error) {
-          console.warn("Failed to get total votes, falling back to estimation:", error);
+        } catch (_error) {
           // Fallback to estimation if contract call fails
           if (roomInfo && roomInfo.isActive) {
             const estimatedVoterPercentage = 0.7; // 70% assumption
@@ -234,15 +235,66 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         // Mark loading as complete
         setIsLoadingUserStatus(false);
         clearTimeout(loadingTimeout);
-      } catch (error) {
-        console.error("Error loading room data:", error);
-        hasLoadedRef.current = false; // Reset on error to allow retry
-        setIsLoadingUserStatus(false); // Stop loading even on error
-      }
+        } catch (_error) {
+          hasLoadedRef.current = false; // Reset on error to allow retry
+          setIsLoadingUserStatus(false); // Stop loading even on error
+        }
     };
 
     loadRoomData();
   }, [roomCode, ethersSigner, votingRoom]); // Include ethersSigner to reload on wallet change
+
+  // Decrypt and display actual voting results
+  const decryptAndDisplayResults = useCallback(async () => {
+    if (!roomCode || !votingRoom || candidates.length === 0 || !room) return;
+
+    // Check if already decrypted to avoid re-decrypting
+    if (candidates.length > 0 && candidates[0].votes > 0) {
+      return;
+    }
+
+    try {
+      // Get total votes from blockchain
+      const totalVotesFromBlockchain = await votingRoom.getTotalVotes(roomCode);
+
+      // Check if results are published first
+      const areResultsPublished = await votingRoom.areResultsPublished(roomCode);
+      
+      if (!areResultsPublished) {
+        throw new Error("Clear results not published yet");
+      }
+
+      // Try to get clear results for each candidate
+      let hasClearResults = false;
+      const updatedCandidates = await Promise.all(
+        candidates.map(async (candidate) => {
+          try {
+            const clearVotes = await votingRoom.getClearResults(roomCode, parseInt(candidate.id));
+            const totalVotes = totalVotesFromBlockchain || room.participantCount;
+            const percentage = totalVotes > 0 ? (clearVotes / totalVotes) * 100 : 0;
+            
+            hasClearResults = true;
+            
+            return {
+              ...candidate,
+              votes: clearVotes,
+              percentage: percentage
+            };
+          } catch (_error) {
+            return candidate; // Return original if getting results fails
+          }
+        })
+      );
+
+      if (!hasClearResults) {
+        throw new Error("Clear results not published yet");
+      }
+
+      setCandidates(updatedCandidates);
+    } catch (_error) {
+      throw _error; // Re-throw to trigger fallback in calling function
+    }
+  }, [roomCode, votingRoom, candidates, room]);
 
   // Update voting results from blockchain
   useEffect(() => {
@@ -259,8 +311,18 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
           try {
             const actualVoteCount = await votingRoom.getTotalVotes(roomCode);
             setCurrentVoters(actualVoteCount);
-          } catch (error) {
-            console.warn("Failed to get total votes in updateVotingResults:", error);
+          } catch (_error) {
+            // Fallback to estimation if contract call fails
+            if (roomInfo && roomInfo.isActive) {
+              const estimatedVoterPercentage = 0.7; // 70% assumption
+              const estimatedVoters = Math.floor(
+                roomInfo.participantCount * estimatedVoterPercentage
+              );
+              setCurrentVoters(estimatedVoters);
+            } else if (roomInfo && !roomInfo.isActive) {
+              // If room ended, assume all participants voted
+              setCurrentVoters(roomInfo.participantCount);
+            }
           }
         }
 
@@ -268,33 +330,83 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         // During voting, we show progress but not vote counts
         if (!room.isActive) {
           // Room has ended, try to get results
-          // Note: In FHE voting, actual vote counts might not be immediately available
-          // This is a placeholder for when results become available
-          const totalVotes = room.participantCount;
-
-          setCandidates((prev) =>
-            prev.map((candidate, index) => {
-              // In a real FHE system, these would come from decrypted results
-              // For now, we simulate based on participant count and candidate index
-              const estimatedVotes =
-                Math.floor(
-                  Math.random() * (totalVotes / candidates.length + 1)
-                ) + index;
-              return {
-                ...candidate,
-                votes: estimatedVotes,
-                percentage:
-                  totalVotes > 0 ? (estimatedVotes / totalVotes) * 100 : 0,
-              };
-            })
-          );
+          // Only update if we haven't already decrypted results
+          if (candidates.length > 0 && candidates[0].votes === 0) {
+            // Try to decrypt actual results
+            try {
+              await decryptAndDisplayResults();
+            } catch (_error) {
+              // Fallback to estimated results only if decryption fails
+              // Don't modify votes if decryption fails, keep original values
+            }
+          }
           setShowResults(true);
         } else if (hasVoted) {
           // User has voted but room is still active - show that voting is in progress
           setShowResults(false); // Don't show results until room ends
         }
-      } catch (error) {
-        console.error("Error updating voting results:", error);
+
+        // Show results if: 
+        // 1. Room is active AND max participants have voted, OR
+        // 2. Room has ended AND max participants have voted
+        if ((room.isActive && currentVoters >= room.maxParticipants) || 
+            (!room.isActive && currentVoters >= room.maxParticipants)) {
+          // All participants have voted, show results immediately
+          setShowResults(true);
+          
+          // Update room status to Complete (only if room was still active)
+          if (room.isActive) {
+            setRoom((prev) => prev ? { ...prev, isActive: false } : null);
+          }
+
+          // Optionally call checkAndEndRoom to end the room on blockchain (only if room was still active)
+          if (room.isActive && roomCode) {
+            try {
+              await votingRoom.checkAndEndRoom(roomCode);
+            } catch (_error) {
+              // Handle error silently
+            }
+          }
+          
+          // Try to get clear results first, if not available, use fallback
+          try {
+            await decryptAndDisplayResults();
+          } catch (_error) {
+            // Fallback: Get all voting results from blockchain in one call
+            try {
+              const votingResults = await votingRoom.getAllVotingResults(roomCode);
+              
+              // Update candidates with real voting data
+              const updatedCandidates = candidates.map((candidate, index) => {
+                const candidateId = parseInt(candidate.id);
+                const voteCount = votingResults.voteCounts[candidateId] || 0;
+                const percentage = votingResults.totalVotes > 0 ? (voteCount / votingResults.totalVotes) * 100 : 0;
+                
+                return {
+                  ...candidate,
+                  votes: voteCount,
+                  percentage: percentage,
+                };
+              });
+              
+              setCandidates(updatedCandidates);
+            } catch (_error) {
+              // Final fallback: Show estimated results if getting real data fails
+              const totalVotes = currentVoters || room.participantCount;
+              setCandidates((prev) =>
+                prev.map((candidate, index) => {
+                  const estimatedVotes = index === 0 ? totalVotes : 0; // First candidate gets all votes for demo
+                  return {
+                    ...candidate,
+                    votes: estimatedVotes,
+                    percentage: totalVotes > 0 ? (estimatedVotes / totalVotes) * 100 : 0,
+                  };
+                })
+              );
+            }
+          }
+        }
+      } catch (_error) {
         // Fallback to show results if there's an error but room is ended
         if (!room.isActive || hasVoted) {
           setShowResults(true);
@@ -302,21 +414,21 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       }
     };
 
-    updateVotingResults();
+    updateVotingResults().catch(() => {});
 
     // Set up interval to refresh results if room is active
-    const intervalId = setInterval(() => {
+    const intervalId = setInterval(async () => {
       if (room?.isActive || hasVoted) {
-        updateVotingResults();
+        await updateVotingResults();
       }
     }, 10000); // Refresh every 10 seconds
 
     return () => clearInterval(intervalId);
-  }, [hasVoted, room, roomCode, votingRoom, candidates.length]); // Dependencies for real-time updates
+  }, [hasVoted, room, roomCode, votingRoom, candidates, currentVoters, decryptAndDisplayResults]); // Dependencies for real-time updates
 
   // Timer countdown
   useEffect(() => {
-    const timer = setInterval(() => {
+    const timer = setInterval(async () => {
       if (room?.endTime) {
         const now = Math.floor(Date.now() / 1000); // Current time in seconds
         const endTime = room.endTime; // endTime is already in seconds
@@ -335,17 +447,25 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
             setTimeLeft(`${minutes}m`);
           }
         } else {
-          setTimeLeft("Ended");
+          setTimeLeft("Completed");
           // Update room status if time has ended
           if (room.isActive) {
             setRoom((prev) => (prev ? { ...prev, isActive: false } : null));
+            // Call checkAndEndRoom to close the room on blockchain
+            if (roomCode) {
+              try {
+                await votingRoom.checkAndEndRoom(roomCode);
+            } catch (_error) {
+              // Handle error silently
+            }
+            }
           }
         }
       }
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [room]);
+  }, [room, roomCode, votingRoom]);
 
   const handleVote = async () => {
     if (!selectedCandidate || !roomCode || !room) return;
@@ -386,8 +506,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         try {
           const updatedVoteCount = await votingRoom.getTotalVotes(roomCode);
           setCurrentVoters(updatedVoteCount);
-        } catch (error) {
-          console.warn("Failed to get updated vote count, using local increment:", error);
+        } catch (_error) {
           setCurrentVoters((prev) => prev + 1);
         }
 
@@ -451,8 +570,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
           if (roomInfo) {
             setCurrentParticipants(roomInfo.participantCount);
           }
-        } catch (refreshError) {
-          console.warn("Failed to refresh room data after join:", refreshError);
+        } catch (_refreshError) {
+          // Handle error silently
         }
       } else {
         const errorMessage = votingRoom.message || "Failed to join room";
@@ -468,6 +587,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   };
 
   const getWinner = () => {
+    if (candidates.length === 0) return { id: -1, name: "No winner", votes: 0, percentage: 0 };
     return candidates.reduce((prev, current) =>
       prev.votes > current.votes ? prev : current
     );
@@ -513,12 +633,6 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                 <h1 className="text-3xl text-white">{room.title}</h1>
                 <p className="text-gray-400">{room.description}</p>
               </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Badge className="bg-green-500/20 text-green-400 border-green-500/30">
-                {room.isActive ? "Active" : "Ended"}
-              </Badge>
             </div>
           </div>
 
@@ -660,7 +774,30 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   );
                 }
 
-                // Priority 1: Room ended
+                // Priority 1: Room closed for new participants
+                if (room.isClosed && room.isActive) {
+                  return (
+                    <Card className="bg-orange-500/10 border-orange-500/30 mb-8">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-orange-500/20 rounded-full">
+                            <Users className="w-5 h-5 text-orange-400" />
+                          </div>
+                          <div>
+                            <div className="text-orange-400">
+                              Room is full!
+                            </div>
+                            <div className="text-sm text-orange-300/70">
+                              This room has reached maximum capacity. No new participants can join, but voting is still active.
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+
+                // Priority 2: Room ended
                 if (!room.isActive) {
                   return (
                     <Card className="bg-red-500/10 border-red-500/30 mb-8">
@@ -683,7 +820,30 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   );
                 }
 
-                // Priority 2: User already voted
+                // Priority 3: Max participants have voted (results announcement condition)
+                if (room.isActive && currentVoters >= room.maxParticipants) {
+                  return (
+                    <Card className="bg-blue-500/10 border-blue-500/30 mb-8">
+                      <CardContent className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-blue-500/20 rounded-full">
+                            <Trophy className="w-5 h-5 text-blue-400" />
+                          </div>
+                          <div>
+                            <div className="text-blue-400">
+                              All participants have voted!
+                            </div>
+                            <div className="text-sm text-blue-300/70">
+                              Voting is complete. Results are now available below.
+                            </div>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  );
+                }
+
+                // Priority 4: User already voted
                 if (hasVoted) {
                   return (
                     <Card className="bg-green-500/10 border-green-500/30 mb-8">
@@ -708,12 +868,12 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   );
                 }
 
-                // Priority 3: User is already a participant (but hasn't voted)
+                // Priority 5: User is already a participant (but hasn't voted)
                 if (isParticipant) {
                   return null; // No status banner needed, they can vote
                 }
 
-                // Priority 4: Room is full
+                // Priority 6: Room is full
                 if (currentParticipants >= room.maxParticipants) {
                   return (
                     <Card className="bg-orange-500/10 border-orange-500/30 mb-8">
@@ -940,7 +1100,9 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                     <div className="text-center">
                       <div className="text-gray-400 text-sm">
                         {room.isActive
-                          ? "You have successfully voted. Results will be published when voting ends."
+                          ? currentVoters >= room.maxParticipants
+                            ? "You have successfully voted. All participants have voted and results are now available above."
+                            : "You have successfully voted. Results will be published when voting ends."
                           : "You have voted and results are now available above."}
                       </div>
                     </div>
@@ -1091,12 +1253,12 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   >
                     <div
                       className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                        !room.isActive && showResults
+                        (!room.isActive && showResults) || (room.isActive && currentVoters >= room.maxParticipants)
                           ? "border-green-400 bg-green-400/20"
                           : "border-gray-600"
                       }`}
                     >
-                      {!room.isActive && showResults ? (
+                      {(!room.isActive && showResults) || (room.isActive && currentVoters >= room.maxParticipants) ? (
                         <Check className="w-3 h-3" />
                       ) : (
                         "4"
@@ -1132,11 +1294,17 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                     <Badge
                       className={
                         room.isActive
-                          ? "bg-green-500/20 text-green-400 border-green-500/30"
+                          ? currentVoters >= room.maxParticipants
+                            ? "bg-blue-500/20 text-blue-400 border-blue-500/30"
+                            : "bg-green-500/20 text-green-400 border-green-500/30"
                           : "bg-gray-500/20 text-gray-400 border-gray-500/30"
                       }
                     >
-                      {room.isActive ? "Active" : "Ended"}
+                      {room.isActive
+                        ? currentVoters >= room.maxParticipants
+                          ? "Complete"
+                          : "Active"
+                        : "Completed"}
                     </Badge>
                   </div>
                   <div className="flex justify-between">

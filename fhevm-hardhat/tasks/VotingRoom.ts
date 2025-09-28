@@ -193,11 +193,34 @@ task("task:voting-vote", "Casts a vote for a candidate")
     const votingRoomContract = await ethers.getContractAt("VotingRoom", VotingRoomDeployment.address);
 
     try {
-      // Encrypt the vote value
-      const encryptedVote = await fhevm
-        .createEncryptedInput(VotingRoomDeployment.address, signers[0].address)
-        .add32(vote)
-        .encrypt();
+      // Encrypt the vote value with retry logic
+      let encryptedVote;
+      let retryCount = 0;
+      const maxRetries = 3;
+
+      while (retryCount < maxRetries) {
+        try {
+          console.log(`Attempting FHE encryption (attempt ${retryCount + 1}/${maxRetries})...`);
+          encryptedVote = await fhevm
+            .createEncryptedInput(VotingRoomDeployment.address, signers[0].address)
+            .add32(vote)
+            .encrypt();
+          console.log("FHE encryption successful!");
+          break;
+        } catch (encryptError) {
+          retryCount++;
+          console.warn(`FHE encryption attempt ${retryCount} failed:`, encryptError.message);
+
+          if (retryCount >= maxRetries) {
+            throw new Error(`FHE encryption failed after ${maxRetries} attempts: ${encryptError.message}`);
+          }
+
+          // Wait before retry (exponential backoff)
+          const waitTime = Math.pow(2, retryCount) * 1000; // 2s, 4s, 8s
+          console.log(`Waiting ${waitTime}ms before retry...`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
+      }
 
       const tx = await votingRoomContract
         .connect(signers[0])
@@ -335,6 +358,35 @@ task("task:voting-has-voted", "Checks if a user has voted in a room")
       console.log(`  Has Voted: ${hasVoted}`);
     } catch (error) {
       console.error("Failed to check voting status:", error);
+    }
+  });
+
+/**
+ * Check and end room if time expired (anyone can call)
+ * Example: npx hardhat --network localhost task:voting-check-end-room --code "ROOM001"
+ */
+task("task:voting-check-end-room", "Checks and ends a room if time has expired")
+  .addOptionalParam("address", "Optionally specify the VotingRoom contract address")
+  .addParam("code", "Room code")
+  .setAction(async function (taskArguments: TaskArguments, hre) {
+    const { ethers, deployments } = hre;
+
+    const VotingRoomDeployment = taskArguments.address
+      ? { address: taskArguments.address }
+      : await deployments.get("VotingRoom");
+    console.log(`VotingRoom: ${VotingRoomDeployment.address}`);
+
+    const signers = await ethers.getSigners();
+    const votingRoomContract = await ethers.getContractAt("VotingRoom", VotingRoomDeployment.address);
+
+    try {
+      const tx = await votingRoomContract.connect(signers[0]).checkAndEndRoom(taskArguments.code);
+
+      console.log(`Wait for tx: ${tx.hash}...`);
+      const receipt = await tx.wait();
+      console.log(`Room checked and ended successfully! Status: ${receipt?.status}`);
+    } catch (error) {
+      console.error("Failed to check and end room:", error);
     }
   });
 
@@ -492,5 +544,64 @@ task("task:voting-join-as", "Joins a voting room with specific signer")
       console.log(`Signer ${signerIndex} (${signer.address}) joined room ${taskArguments.code}`);
     } catch (error) {
       console.error("Failed to join room:", error);
+    }
+  });
+
+/**
+ * Get candidate votes
+ * Example: npx hardhat --network localhost task:voting-get-candidate-votes --code "ROOM001" --candidate-id 0
+ */
+task("task:voting-get-candidate-votes", "Gets votes for a specific candidate")
+  .addParam("code", "Room code")
+  .addParam("candidateId", "Candidate ID")
+  .addOptionalParam("address", "VotingRoom contract address")
+  .setAction(async (taskArguments) => {
+    const VotingRoomDeployment = taskArguments.address
+      ? { address: taskArguments.address }
+      : await deployments.get("VotingRoom");
+    console.log(`VotingRoom: ${VotingRoomDeployment.address}`);
+
+    const votingRoomContract = await ethers.getContractAt("VotingRoom", VotingRoomDeployment.address);
+
+    try {
+      const candidateVotes = await votingRoomContract.getCandidateVoteCount(
+        taskArguments.code,
+        taskArguments.candidateId,
+      );
+      console.log(`Candidate ${taskArguments.candidateId} votes: ${candidateVotes.toString()}`);
+    } catch (error) {
+      console.error("Failed to get candidate votes:", error);
+    }
+  });
+
+/**
+ * Get all voting results for a room
+ * Example: npx hardhat --network localhost task:voting-get-all-results --code "ROOM001"
+ */
+task("task:voting-get-all-results", "Gets all voting results for a room")
+  .addParam("code", "Room code")
+  .addOptionalParam("address", "VotingRoom contract address")
+  .setAction(async (taskArguments) => {
+    const VotingRoomDeployment = taskArguments.address
+      ? { address: taskArguments.address }
+      : await deployments.get("VotingRoom");
+    console.log(`VotingRoom: ${VotingRoomDeployment.address}`);
+
+    const votingRoomContract = await ethers.getContractAt("VotingRoom", VotingRoomDeployment.address);
+
+    try {
+      const [candidateIds, candidateNames, voteCounts, totalVotes] = await votingRoomContract.getAllVotingResults(
+        taskArguments.code,
+      );
+
+      console.log(`\n=== All Voting Results for Room ${taskArguments.code} ===`);
+      console.log(`Total Votes: ${totalVotes.toString()}`);
+      console.log(`\nCandidates:`);
+
+      for (let i = 0; i < candidateIds.length; i++) {
+        console.log(`${candidateIds[i]}: ${candidateNames[i]} - ${voteCounts[i]} votes`);
+      }
+    } catch (error) {
+      console.error("Failed to get all voting results:", error);
     }
   });

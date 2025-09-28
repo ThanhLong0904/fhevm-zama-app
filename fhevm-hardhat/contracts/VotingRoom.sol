@@ -26,7 +26,8 @@ contract VotingRoom is SepoliaConfig {
         uint256 endTime;
         bool hasPassword;
         bytes32 passwordHash; // Hash of password if required
-        bool isActive;
+        bool isActive; // Room is open for voting
+        bool isClosed; // Room is closed for new participants
         uint256 candidateCount;
     }
 
@@ -36,6 +37,9 @@ contract VotingRoom is SepoliaConfig {
     mapping(string roomCode => mapping(address voter => bool voted)) public hasVoted;
     mapping(string roomCode => mapping(address user => bool participant)) public isParticipant;
     mapping(string roomCode => uint256) public totalVotes; // Track total votes per room
+    mapping(string roomCode => mapping(uint256 candidateId => uint256)) public candidateVotes; // Track votes per candidate
+    mapping(string roomCode => mapping(uint256 candidateId => uint256 clearVotes)) public clearResults; // Clear vote results per candidate
+    mapping(string roomCode => bool) public resultsPublished; // Whether results have been published
     string[] public roomCodes; // Array to track all room codes
     mapping(string roomCode => uint256 index) public roomCodeIndex; // Index of room code in array
 
@@ -43,7 +47,9 @@ contract VotingRoom is SepoliaConfig {
     event RoomCreated(string indexed roomCode, address indexed creator, string title);
     event VoteCast(string indexed roomCode, address indexed voter);
     event RoomJoined(string indexed roomCode, address indexed participant);
+    event RoomClosed(string indexed roomCode);
     event RoomEnded(string indexed roomCode);
+    event ResultsPublished(string indexed roomCode);
 
     modifier roomExists(string memory roomCode) {
         require(bytes(rooms[roomCode].code).length > 0, "Room does not exist");
@@ -53,6 +59,7 @@ contract VotingRoom is SepoliaConfig {
     modifier roomActive(string memory roomCode) {
         require(rooms[roomCode].isActive, "Room is not active");
         require(rooms[roomCode].endTime > block.timestamp, "Room has ended");
+        require(!rooms[roomCode].isClosed, "Room is closed for new participants");
         _;
     }
 
@@ -98,6 +105,7 @@ contract VotingRoom is SepoliaConfig {
             hasPassword: hasPassword,
             passwordHash: passwordHash,
             isActive: true,
+            isClosed: false,
             candidateCount: 0
         });
 
@@ -156,6 +164,7 @@ contract VotingRoom is SepoliaConfig {
             hasPassword: hasPassword,
             passwordHash: passwordHash,
             isActive: true,
+            isClosed: false,
             candidateCount: 0
         });
 
@@ -277,6 +286,12 @@ contract VotingRoom is SepoliaConfig {
         isParticipant[roomCode][msg.sender] = true;
         rooms[roomCode].participantCount++;
 
+        // Close room if it's now full
+        if (rooms[roomCode].participantCount >= rooms[roomCode].maxParticipants) {
+            rooms[roomCode].isClosed = true;
+            emit RoomClosed(roomCode);
+        }
+
         emit RoomJoined(roomCode, msg.sender);
     }
 
@@ -290,7 +305,9 @@ contract VotingRoom is SepoliaConfig {
         uint256 candidateId,
         externalEuint32 encryptedVote,
         bytes calldata inputProof
-    ) external roomExists(roomCode) roomActive(roomCode) isRoomParticipant(roomCode) hasNotVoted(roomCode) {
+    ) external roomExists(roomCode) isRoomParticipant(roomCode) hasNotVoted(roomCode) {
+        require(rooms[roomCode].isActive, "Room is not active");
+        require(rooms[roomCode].endTime > block.timestamp, "Room has ended");
         require(candidateId < rooms[roomCode].candidateCount, "Invalid candidate");
         require(roomCandidates[roomCode][candidateId].exists, "Candidate does not exist");
 
@@ -313,6 +330,13 @@ contract VotingRoom is SepoliaConfig {
 
         // Increment total vote count for this room
         totalVotes[roomCode]++;
+        candidateVotes[roomCode][candidateId]++;
+
+        // Announce results if max participants have voted
+        if (totalVotes[roomCode] >= rooms[roomCode].maxParticipants) {
+            rooms[roomCode].isActive = false;
+            emit RoomEnded(roomCode);
+        }
 
         emit VoteCast(roomCode, msg.sender);
     }
@@ -366,6 +390,16 @@ contract VotingRoom is SepoliaConfig {
         emit RoomEnded(roomCode);
     }
 
+    /// @notice Checks and ends a room if time has expired (anyone can call)
+    /// @param roomCode Room identifier
+    function checkAndEndRoom(string memory roomCode) external roomExists(roomCode) {
+        require(rooms[roomCode].isActive, "Room already ended");
+        require(block.timestamp >= rooms[roomCode].endTime, "Room has not ended yet");
+
+        rooms[roomCode].isActive = false;
+        emit RoomEnded(roomCode);
+    }
+
     /// @notice Checks if a user has voted in a room
     /// @param roomCode Room identifier
     /// @param user User address
@@ -387,6 +421,18 @@ contract VotingRoom is SepoliaConfig {
     /// @return Total number of votes cast
     function getTotalVotes(string memory roomCode) external view roomExists(roomCode) returns (uint256) {
         return totalVotes[roomCode];
+    }
+
+    /// @notice Gets the number of votes for a specific candidate
+    /// @param roomCode Room identifier
+    /// @param candidateId Candidate index
+    /// @return Number of votes for the candidate
+    function getCandidateVoteCount(
+        string memory roomCode,
+        uint256 candidateId
+    ) external view roomExists(roomCode) returns (uint256) {
+        require(candidateId < rooms[roomCode].candidateCount, "Invalid candidate");
+        return candidateVotes[roomCode][candidateId];
     }
 
     /// @notice Gets the total number of rooms
@@ -453,5 +499,84 @@ contract VotingRoom is SepoliaConfig {
         bool hasMore = offset + returnCount < totalRooms;
 
         return (paginatedRooms, hasMore);
+    }
+
+    /// @notice Publish clear results for a room (only creator can do this)
+    /// @param roomCode Room identifier
+    /// @param candidateVoteCounts Array of clear vote counts for each candidate
+    function publishResults(
+        string memory roomCode,
+        uint256[] memory candidateVoteCounts
+    ) external roomExists(roomCode) {
+        require(msg.sender == rooms[roomCode].creator, "Only creator can publish results");
+        require(!rooms[roomCode].isActive, "Room must be ended to publish results");
+        require(candidateVoteCounts.length == rooms[roomCode].candidateCount, "Invalid candidate votes length");
+
+        // Store clear results
+        for (uint256 i = 0; i < candidateVoteCounts.length; i++) {
+            clearResults[roomCode][i] = candidateVoteCounts[i];
+        }
+
+        resultsPublished[roomCode] = true;
+        emit ResultsPublished(roomCode);
+    }
+
+    /// @notice Get clear results for a candidate
+    /// @param roomCode Room identifier
+    /// @param candidateId Candidate index
+    /// @return Clear vote count
+    function getClearResults(
+        string memory roomCode,
+        uint256 candidateId
+    ) external view roomExists(roomCode) returns (uint256) {
+        require(resultsPublished[roomCode], "Results not published yet");
+        require(candidateId < rooms[roomCode].candidateCount, "Invalid candidate");
+        return clearResults[roomCode][candidateId];
+    }
+
+    /// @notice Check if results are published for a room
+    /// @param roomCode Room identifier
+    /// @return Whether results are published
+    function areResultsPublished(string memory roomCode) external view roomExists(roomCode) returns (bool) {
+        return resultsPublished[roomCode];
+    }
+
+    /// @notice Get all voting results for a room (all candidates with their vote counts)
+    /// @param roomCode Room identifier
+    /// @return candidateIds Array of candidate IDs
+    /// @return candidateNames Array of candidate names
+    /// @return voteCounts Array of vote counts for each candidate
+    /// @return roomTotalVotes Total votes in the room
+    function getAllVotingResults(
+        string memory roomCode
+    )
+        external
+        view
+        roomExists(roomCode)
+        returns (
+            uint256[] memory candidateIds,
+            string[] memory candidateNames,
+            uint256[] memory voteCounts,
+            uint256 roomTotalVotes
+        )
+    {
+        uint256 candidateCount = rooms[roomCode].candidateCount;
+
+        // Initialize arrays
+        candidateIds = new uint256[](candidateCount);
+        candidateNames = new string[](candidateCount);
+        voteCounts = new uint256[](candidateCount);
+
+        // Get total votes
+        roomTotalVotes = totalVotes[roomCode];
+
+        // Fill arrays with candidate data
+        for (uint256 i = 0; i < candidateCount; i++) {
+            candidateIds[i] = i;
+            candidateNames[i] = roomCandidates[roomCode][i].name;
+            voteCounts[i] = candidateVotes[roomCode][i];
+        }
+
+        return (candidateIds, candidateNames, voteCounts, roomTotalVotes);
     }
 }

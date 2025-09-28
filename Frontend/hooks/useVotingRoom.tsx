@@ -3,6 +3,7 @@
 import { ethers } from "ethers";
 import { useState, useCallback, useMemo } from "react";
 import { FhevmInstance } from "@/fhevm/fhevmTypes";
+import { GenericStringStorage } from "@/fhevm/GenericStringStorage";
 import { VotingRoomABI } from "@/abi/VotingRoomABI";
 import { VotingRoomAddresses } from "@/abi/VotingRoomAddresses";
 
@@ -32,8 +33,9 @@ export const useVotingRoom = (parameters: {
   ethersSigner: ethers.JsonRpcSigner | undefined;
   ethersReadonlyProvider: ethers.ContractRunner | undefined;
   chainId: number | undefined;
+  fhevmDecryptionSignatureStorage?: GenericStringStorage;
 }) => {
-  const { instance, ethersSigner, ethersReadonlyProvider, chainId } =
+  const { instance, ethersSigner, ethersReadonlyProvider, chainId, fhevmDecryptionSignatureStorage } =
     parameters;
 
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -417,14 +419,39 @@ export const useVotingRoom = (parameters: {
         // Let the browser repaint before running 'input.encrypt()' (CPU-costly)
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        // Create encrypted input for vote (value = 1) - follow useFHECounter pattern exactly
+        // Create encrypted input for vote (value = 1) with retry logic
         const input = instance.createEncryptedInput(
           votingRoomAddress,
           userAddress
         );
         input.add32(1); // Vote value is always 1
-        // Try encrypting with better error handling
-        const enc = await input.encrypt();
+        
+        // Try encrypting with retry logic for 504 timeout issues
+        let enc;
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount < maxRetries) {
+          try {
+            setMessage(`Encrypting vote (attempt ${retryCount + 1}/${maxRetries})...`);
+            enc = await input.encrypt();
+            console.log("FHE encryption successful");
+            break;
+          } catch (encryptError: any) {
+            retryCount++;
+            console.warn(`FHE encryption attempt ${retryCount} failed:`, encryptError.message);
+            
+            if (retryCount >= maxRetries) {
+              throw new Error(`FHE encryption failed after ${maxRetries} attempts: ${encryptError.message}`);
+            }
+            
+            // Wait before retry (exponential backoff)
+            const waitTime = Math.pow(2, retryCount) * 1000; // 2s, 4s, 8s
+            setMessage(`Encryption failed, retrying in ${waitTime/1000}s...`);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          }
+        }
+        
         setMessage("Casting vote...");
 
         // Call contract - use enc.handles[0] and enc.inputProof directly like useFHECounter
@@ -579,6 +606,56 @@ export const useVotingRoom = (parameters: {
       console.error("Error getting total votes:", error);
       setMessage("Failed to get total votes");
       return 0;
+    }
+  }, [getReadOnlyContract]);
+
+  // Get votes for a specific candidate
+  const getCandidateVotes = useCallback(async (roomCode: string, candidateId: number): Promise<number> => {
+    try {
+      const contract = getReadOnlyContract();
+      if (!contract) {
+        throw new Error("Contract not available");
+      }
+
+      const candidateVotes = await contract.getCandidateVoteCount(roomCode, candidateId);
+      return Number(candidateVotes);
+    } catch (error) {
+      console.error("Error getting candidate votes:", error);
+      setMessage("Failed to get candidate votes");
+      return 0;
+    }
+  }, [getReadOnlyContract]);
+
+  // Get all voting results for a room (all candidates with their vote counts)
+  const getAllVotingResults = useCallback(async (roomCode: string): Promise<{
+    candidateIds: number[];
+    candidateNames: string[];
+    voteCounts: number[];
+    totalVotes: number;
+  }> => {
+    try {
+      const contract = getReadOnlyContract();
+      if (!contract) {
+        throw new Error("Contract not available");
+      }
+
+      const [candidateIds, candidateNames, voteCounts, totalVotes] = await contract.getAllVotingResults(roomCode);
+      
+      return {
+        candidateIds: candidateIds.map(id => Number(id)),
+        candidateNames: candidateNames,
+        voteCounts: voteCounts.map(count => Number(count)),
+        totalVotes: Number(totalVotes)
+      };
+    } catch (error) {
+      console.error("Error getting all voting results:", error);
+      setMessage("Failed to get voting results");
+      return {
+        candidateIds: [],
+        candidateNames: [],
+        voteCounts: [],
+        totalVotes: 0
+      };
     }
   }, [getReadOnlyContract]);
 
@@ -806,6 +883,111 @@ export const useVotingRoom = (parameters: {
     []
   );
 
+  // Check and end room if time has expired
+  const checkAndEndRoom = useCallback(
+    async (roomCode: string) => {
+      const contract = getContract();
+      if (!contract) {
+        setMessage("Contract not available");
+        return false;
+      }
+
+      setIsLoading(true);
+      setMessage("Checking room status...");
+
+      try {
+        const tx = await contract.checkAndEndRoom(roomCode);
+        setMessage(`Waiting for transaction ${tx.hash}...`);
+        const receipt = await tx.wait();
+
+        if (receipt?.status === 1) {
+          setMessage("Room checked and ended successfully!");
+          return true;
+        } else {
+          setMessage("Failed to check and end room");
+          return false;
+        }
+      } catch (error: unknown) {
+        const errorMessage =
+          error instanceof Error ? error.message : String(error);
+        setMessage(`Error checking room: ${errorMessage}`);
+        return false;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [getContract]
+  );
+
+  // Check if results are published
+  const areResultsPublished = useCallback(
+    async (roomCode: string) => {
+      if (!ethersReadonlyProvider) return false;
+
+      try {
+        setMessage("Checking if results are published...");
+
+        // Use readonly provider for read-only operations
+        const readonlyContract = new ethers.Contract(
+          votingRoomAddress,
+          VotingRoomABI.abi,
+          ethersReadonlyProvider
+        );
+
+        // Check if results are published
+        const arePublished = await readonlyContract.areResultsPublished(roomCode);
+        console.log("Results published:", arePublished);
+
+        setMessage("Results published status checked!");
+        return arePublished;
+
+      } catch (error) {
+        console.error("Error checking results published status:", error);
+        setMessage(`Failed to check results published status: ${error}`);
+        return false;
+      }
+    },
+    [ethersReadonlyProvider, votingRoomAddress]
+  );
+
+  // Get clear results for a candidate (no user interaction required)
+  const getClearResults = useCallback(
+    async (roomCode: string, candidateId: number) => {
+      if (!ethersReadonlyProvider) return 0;
+
+      try {
+        setMessage("Getting clear results...");
+
+        // Use readonly provider for read-only operations
+        const readonlyContract = new ethers.Contract(
+          votingRoomAddress,
+          VotingRoomABI.abi,
+          ethersReadonlyProvider
+        );
+
+        // Check if results are published
+        const arePublished = await readonlyContract.areResultsPublished(roomCode);
+        if (!arePublished) {
+          console.log("Results not published yet");
+          return 0;
+        }
+
+        // Get clear results
+        const clearVotes = await readonlyContract.getClearResults(roomCode, candidateId);
+        console.log(`Candidate ${candidateId} clear votes:`, clearVotes.toString());
+
+        setMessage("Clear results retrieved successfully!");
+        return Number(clearVotes);
+
+      } catch (error) {
+        console.error("Error getting clear results:", error);
+        setMessage(`Failed to get clear results: ${error}`);
+        return 0;
+      }
+    },
+    [ethersReadonlyProvider, votingRoomAddress]
+  );
+
   return {
     // State
     isLoading,
@@ -825,6 +1007,8 @@ export const useVotingRoom = (parameters: {
 
     // Room enumeration
     getTotalVotes,
+    getCandidateVotes,
+    getAllVotingResults,
     getTotalRoomsCount,
     getAllRoomCodes,
     getActiveRooms,
@@ -835,6 +1019,11 @@ export const useVotingRoom = (parameters: {
     checkParticipantStatus,
     getRoomPasswordHash,
     validatePasswordLocally,
+    checkAndEndRoom,
+
+    // Vote results
+    getClearResults,
+    areResultsPublished,
 
     // Utils
     setMessage,
