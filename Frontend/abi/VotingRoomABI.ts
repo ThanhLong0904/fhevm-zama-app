@@ -13,6 +13,32 @@ export const VotingRoomABI = {
           "internalType": "string",
           "name": "roomCode",
           "type": "string"
+        }
+      ],
+      "name": "ResultsPublished",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        }
+      ],
+      "name": "RoomClosed",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
         },
         {
           "indexed": true,
@@ -135,6 +161,86 @@ export const VotingRoomABI = {
       "name": "addCandidatesBatch",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        }
+      ],
+      "name": "areResultsPublished",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "candidateId",
+          "type": "uint256"
+        }
+      ],
+      "name": "candidateVotes",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        }
+      ],
+      "name": "checkAndEndRoom",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "candidateId",
+          "type": "uint256"
+        }
+      ],
+      "name": "clearResults",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "clearVotes",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -283,6 +389,40 @@ export const VotingRoomABI = {
           "internalType": "string",
           "name": "roomCode",
           "type": "string"
+        }
+      ],
+      "name": "getAllVotingResults",
+      "outputs": [
+        {
+          "internalType": "uint256[]",
+          "name": "candidateIds",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "string[]",
+          "name": "candidateNames",
+          "type": "string[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "voteCounts",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "uint256",
+          "name": "roomTotalVotes",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
         },
         {
           "internalType": "uint256",
@@ -324,12 +464,60 @@ export const VotingRoomABI = {
           "type": "uint256"
         }
       ],
+      "name": "getCandidateVoteCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "candidateId",
+          "type": "uint256"
+        }
+      ],
       "name": "getCandidateVotes",
       "outputs": [
         {
           "internalType": "euint32",
           "name": "",
           "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256",
+          "name": "candidateId",
+          "type": "uint256"
+        }
+      ],
+      "name": "getClearResults",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
         }
       ],
       "stateMutability": "view",
@@ -398,6 +586,11 @@ export const VotingRoomABI = {
               "type": "bool"
             },
             {
+              "internalType": "bool",
+              "name": "isClosed",
+              "type": "bool"
+            },
+            {
               "internalType": "uint256",
               "name": "candidateCount",
               "type": "uint256"
@@ -441,14 +634,8 @@ export const VotingRoomABI = {
       "type": "function"
     },
     {
-      "inputs": [
-        {
-          "internalType": "string",
-          "name": "roomCode",
-          "type": "string"
-        }
-      ],
-      "name": "getTotalVotes",
+      "inputs": [],
+      "name": "getTotalRoomsCount",
       "outputs": [
         {
           "internalType": "uint256",
@@ -460,8 +647,14 @@ export const VotingRoomABI = {
       "type": "function"
     },
     {
-      "inputs": [],
-      "name": "getTotalRoomsCount",
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        }
+      ],
+      "name": "getTotalVotes",
       "outputs": [
         {
           "internalType": "uint256",
@@ -584,6 +777,43 @@ export const VotingRoomABI = {
       "name": "joinRoom",
       "outputs": [],
       "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "candidateVoteCounts",
+          "type": "uint256[]"
+        }
+      ],
+      "name": "publishResults",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        }
+      ],
+      "name": "resultsPublished",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
       "type": "function"
     },
     {
@@ -729,8 +959,32 @@ export const VotingRoomABI = {
           "type": "bool"
         },
         {
+          "internalType": "bool",
+          "name": "isClosed",
+          "type": "bool"
+        },
+        {
           "internalType": "uint256",
           "name": "candidateCount",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "string",
+          "name": "roomCode",
+          "type": "string"
+        }
+      ],
+      "name": "totalVotes",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
           "type": "uint256"
         }
       ],

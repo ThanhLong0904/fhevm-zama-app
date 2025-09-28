@@ -452,6 +452,10 @@ export const useVotingRoom = (parameters: {
           }
         }
         
+        if (!enc) {
+          throw new Error("FHE encryption failed - no encrypted data available");
+        }
+        
         setMessage("Casting vote...");
 
         // Call contract - use enc.handles[0] and enc.inputProof directly like useFHECounter
@@ -642,9 +646,9 @@ export const useVotingRoom = (parameters: {
       const [candidateIds, candidateNames, voteCounts, totalVotes] = await contract.getAllVotingResults(roomCode);
       
       return {
-        candidateIds: candidateIds.map(id => Number(id)),
+        candidateIds: candidateIds.map((id: any) => Number(id)),
         candidateNames: candidateNames,
-        voteCounts: voteCounts.map(count => Number(count)),
+        voteCounts: voteCounts.map((count: any) => Number(count)),
         totalVotes: Number(totalVotes)
       };
     } catch (error) {

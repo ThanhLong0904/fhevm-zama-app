@@ -1,5 +1,6 @@
 "use client";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import * as React from "react";
 import * as RechartsPrimitive from "recharts";
 
@@ -120,7 +121,7 @@ function ChartTooltipContent({
   labelKey,
 }: {
   active?: boolean;
-  payload?: any[];
+  payload?: unknown[];
   className?: string;
   hideLabel?: boolean;
   hideIndicator?: boolean;
@@ -129,8 +130,8 @@ function ChartTooltipContent({
   labelKey?: string;
   label?: string;
   labelClassName?: string;
-  labelFormatter?: (value: any, payload: any[]) => React.ReactNode;
-  formatter?: (value: any, name: any, item: any, index: number, payload: any) => React.ReactNode;
+  labelFormatter?: (value: unknown, payload: unknown[]) => React.ReactNode;
+  formatter?: (value: unknown, name: unknown, item: unknown, index: number, payload: unknown) => React.ReactNode;
   color?: string;
 }) {
   const { config } = useChart();
@@ -141,7 +142,8 @@ function ChartTooltipContent({
     }
 
     const [item] = payload;
-    const key = `${labelKey || item?.dataKey || item?.name || "value"}`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const key = `${labelKey || (item as any)?.dataKey || (item as any)?.name || "value"}`;
     const itemConfig = getPayloadConfigFromPayload(config, item, key);
     const value =
       !labelKey && typeof label === "string"
@@ -187,20 +189,20 @@ function ChartTooltipContent({
       {!nestLabel ? tooltipLabel : null}
       <div className="grid gap-1.5">
         {payload.map((item, index) => {
-          const key = `${nameKey || item.name || item.dataKey || "value"}`;
+          const key = `${nameKey || (item as any).name || (item as any).dataKey || "value"}`;
           const itemConfig = getPayloadConfigFromPayload(config, item, key);
-          const indicatorColor = color || item.payload.fill || item.color;
+          const indicatorColor = color || (item as any).payload?.fill || (item as any).color;
 
           return (
             <div
-              key={item.dataKey}
+              key={(item as any).dataKey}
               className={cn(
                 "[&>svg]:text-muted-foreground flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5",
                 indicator === "dot" && "items-center",
               )}
             >
-              {formatter && item?.value !== undefined && item.name ? (
-                formatter(item.value, item.name, item, index, item.payload)
+              {formatter && (item as any)?.value !== undefined && (item as any).name ? (
+                formatter((item as any).value, (item as any).name, item, index, (item as any).payload)
               ) : (
                 <>
                   {itemConfig?.icon ? (
@@ -236,12 +238,12 @@ function ChartTooltipContent({
                     <div className="grid gap-1.5">
                       {nestLabel ? tooltipLabel : null}
                       <span className="text-muted-foreground">
-                        {itemConfig?.label || item.name}
+                        {itemConfig?.label || (item as any).name}
                       </span>
                     </div>
-                    {item.value && (
+                    {(item as any).value && (
                       <span className="text-foreground font-mono font-medium tabular-nums">
-                        {item.value.toLocaleString()}
+                        {(item as any).value.toLocaleString()}
                       </span>
                     )}
                   </div>
@@ -266,7 +268,7 @@ function ChartLegendContent({
 }: {
   className?: string;
   hideIcon?: boolean;
-  payload?: any[];
+  payload?: unknown[];
   verticalAlign?: "top" | "bottom";
   nameKey?: string;
 }) {
@@ -285,12 +287,12 @@ function ChartLegendContent({
       )}
     >
       {payload.map((item) => {
-        const key = `${nameKey || item.dataKey || "value"}`;
+        const key = `${nameKey || (item as any).dataKey || "value"}`;
         const itemConfig = getPayloadConfigFromPayload(config, item, key);
 
         return (
           <div
-            key={item.value}
+            key={(item as any).value}
             className={cn(
               "[&>svg]:text-muted-foreground flex items-center gap-1.5 [&>svg]:h-3 [&>svg]:w-3",
             )}
@@ -301,7 +303,7 @@ function ChartLegendContent({
               <div
                 className="h-2 w-2 shrink-0 rounded-[2px]"
                 style={{
-                  backgroundColor: item.color,
+                  backgroundColor: (item as any).color,
                 }}
               />
             )}
