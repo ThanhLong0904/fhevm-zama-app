@@ -47,7 +47,7 @@
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@types/react-day-picker": "^5.2.1",
-    "@zama-fhe/relayer-sdk": "^0.2.0",
+    "@zama-fhe/relayer-sdk": "0.1.2",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
@@ -92,5 +92,8 @@
     "typescript": "^5",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^3.2.4"
+  },
+  "overrides": {
+    "@zama-fhe/relayer-sdk": "0.1.2"
   }
 }
