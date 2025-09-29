@@ -92,17 +92,17 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         setVotedCandidate(storedVotedCandidate);
       }
     }
-    
+
     // Also reload actual vote count
     try {
       const actualVoteCount = await votingRoom.getTotalVotes(roomCode);
       setCurrentVoters(actualVoteCount);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
-          // Handle error silently
-        }
-    
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (_) {
+      // Handle error silently
+    }
+
     setIsReloadingUserStatus(false);
   };
 
@@ -181,7 +181,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
             endTime: roomInfo.endTime,
             hasPassword: roomInfo.hasPassword,
             isActive: roomInfo.isActive,
-            isClosed: 'isClosed' in roomInfo ? Boolean(roomInfo.isClosed) : false,
+            isClosed:
+              "isClosed" in roomInfo ? Boolean(roomInfo.isClosed) : false,
             candidateCount: roomInfo.candidateCount,
           });
           setCurrentParticipants(roomInfo.participantCount);
@@ -220,9 +221,9 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         try {
           const actualVoteCount = await votingRoom.getTotalVotes(roomCode);
           setCurrentVoters(actualVoteCount);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (_) {
           // Fallback to estimation if contract call fails
           if (roomInfo && roomInfo.isActive) {
             const estimatedVoterPercentage = 0.7; // 70% assumption
@@ -241,10 +242,10 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         clearTimeout(loadingTimeout);
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
-          hasLoadedRef.current = false; // Reset on error to allow retry
-          setIsLoadingUserStatus(false); // Stop loading even on error
-        }
+      } catch (_) {
+        hasLoadedRef.current = false; // Reset on error to allow retry
+        setIsLoadingUserStatus(false); // Stop loading even on error
+      }
     };
 
     loadRoomData();
@@ -264,8 +265,10 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       const totalVotesFromBlockchain = await votingRoom.getTotalVotes(roomCode);
 
       // Check if results are published first
-      const areResultsPublished = await votingRoom.areResultsPublished(roomCode);
-      
+      const areResultsPublished = await votingRoom.areResultsPublished(
+        roomCode
+      );
+
       if (!areResultsPublished) {
         throw new Error("Clear results not published yet");
       }
@@ -275,19 +278,24 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       const updatedCandidates = await Promise.all(
         candidates.map(async (candidate) => {
           try {
-            const clearVotes = await votingRoom.getClearResults(roomCode, parseInt(candidate.id));
-            const totalVotes = totalVotesFromBlockchain || room.participantCount;
-            const percentage = totalVotes > 0 ? (clearVotes / totalVotes) * 100 : 0;
-            
+            const clearVotes = await votingRoom.getClearResults(
+              roomCode,
+              parseInt(candidate.id)
+            );
+            const totalVotes =
+              totalVotesFromBlockchain || room.participantCount;
+            const percentage =
+              totalVotes > 0 ? (clearVotes / totalVotes) * 100 : 0;
+
             hasClearResults = true;
-            
+
             return {
               ...candidate,
               votes: clearVotes,
-              percentage: percentage
+              percentage: percentage,
             };
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          } catch (_) {
             return candidate; // Return original if getting results fails
           }
         })
@@ -298,8 +306,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       }
 
       setCandidates(updatedCandidates);
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    } catch (_) {
       throw _; // Re-throw to trigger fallback in calling function
     }
   }, [roomCode, votingRoom, candidates, room]);
@@ -314,13 +322,13 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
         if (roomInfo) {
           // Update participant count
           setCurrentParticipants(roomInfo.participantCount);
-          
+
           // Update actual vote count
           try {
             const actualVoteCount = await votingRoom.getTotalVotes(roomCode);
             setCurrentVoters(actualVoteCount);
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          } catch (_) {
             // Fallback to estimation if contract call fails
             if (roomInfo && roomInfo.isActive) {
               const estimatedVoterPercentage = 0.7; // 70% assumption
@@ -344,8 +352,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
             // Try to decrypt actual results
             try {
               await decryptAndDisplayResults();
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            } catch (_) {
               // Fallback to estimated results only if decryption fails
               // Don't modify votes if decryption fails, keep original values
             }
@@ -356,56 +364,63 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
           setShowResults(false); // Don't show results until room ends
         }
 
-        // Show results if: 
+        // Show results if:
         // 1. Room is active AND max participants have voted, OR
         // 2. Room has ended AND max participants have voted
-        if ((room.isActive && currentVoters >= room.maxParticipants) || 
-            (!room.isActive && currentVoters >= room.maxParticipants)) {
+        if (
+          (room.isActive && currentVoters >= room.maxParticipants) ||
+          (!room.isActive && currentVoters >= room.maxParticipants)
+        ) {
           // All participants have voted, show results immediately
           setShowResults(true);
-          
+
           // Update room status to Complete (only if room was still active)
           if (room.isActive) {
-            setRoom((prev) => prev ? { ...prev, isActive: false } : null);
+            setRoom((prev) => (prev ? { ...prev, isActive: false } : null));
           }
 
           // Optionally call checkAndEndRoom to end the room on blockchain (only if room was still active)
           if (room.isActive && roomCode) {
             try {
               await votingRoom.checkAndEndRoom(roomCode);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
-          // Handle error silently
-        }
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            } catch (_) {
+              // Handle error silently
+            }
           }
-          
+
           // Try to get clear results first, if not available, use fallback
           try {
             await decryptAndDisplayResults();
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          } catch (_) {
             // Fallback: Get all voting results from blockchain in one call
             try {
-              const votingResults = await votingRoom.getAllVotingResults(roomCode);
-              
+              const votingResults = await votingRoom.getAllVotingResults(
+                roomCode
+              );
+
               // Update candidates with real voting data
               const updatedCandidates = candidates.map((candidate) => {
                 const candidateId = parseInt(candidate.id);
                 const voteCount = votingResults.voteCounts[candidateId] || 0;
-                const percentage = votingResults.totalVotes > 0 ? (voteCount / votingResults.totalVotes) * 100 : 0;
-                
+                const percentage =
+                  votingResults.totalVotes > 0
+                    ? (voteCount / votingResults.totalVotes) * 100
+                    : 0;
+
                 return {
                   ...candidate,
                   votes: voteCount,
                   percentage: percentage,
                 };
               });
-              
+
               setCandidates(updatedCandidates);
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
+              // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            } catch (_) {
               // Final fallback: Show estimated results if getting real data fails
               const totalVotes = currentVoters || room.participantCount;
               setCandidates((prev) =>
@@ -414,15 +429,16 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   return {
                     ...candidate,
                     votes: estimatedVotes,
-                    percentage: totalVotes > 0 ? (estimatedVotes / totalVotes) * 100 : 0,
+                    percentage:
+                      totalVotes > 0 ? (estimatedVotes / totalVotes) * 100 : 0,
                   };
                 })
               );
             }
           }
         }
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      } catch (_) {
         // Fallback to show results if there's an error but room is ended
         if (!room.isActive || hasVoted) {
           setShowResults(true);
@@ -440,7 +456,15 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
     }, 10000); // Refresh every 10 seconds
 
     return () => clearInterval(intervalId);
-  }, [hasVoted, room, roomCode, votingRoom, candidates, currentVoters, decryptAndDisplayResults]); // Dependencies for real-time updates
+  }, [
+    hasVoted,
+    room,
+    roomCode,
+    votingRoom,
+    candidates,
+    currentVoters,
+    decryptAndDisplayResults,
+  ]); // Dependencies for real-time updates
 
   // Timer countdown
   useEffect(() => {
@@ -471,12 +495,12 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
             if (roomCode) {
               try {
                 await votingRoom.checkAndEndRoom(roomCode);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
-          // Handle error silently
-        }
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+                // eslint-disable-next-line @typescript-eslint/no-unused-vars
+              } catch (_) {
+                // Handle error silently
+              }
             }
           }
         }
@@ -520,13 +544,13 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       if (success) {
         setHasVoted(true);
         setVotedCandidate(selectedCandidate); // Lưu candidate đã vote
-        
+
         // Get updated vote count from smart contract instead of local increment
         try {
           const updatedVoteCount = await votingRoom.getTotalVotes(roomCode);
           setCurrentVoters(updatedVoteCount);
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (_) {
           setCurrentVoters((prev) => prev + 1);
         }
 
@@ -590,9 +614,9 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
           if (roomInfo) {
             setCurrentParticipants(roomInfo.participantCount);
           }
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-} catch (_) {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        } catch (_) {
           // Handle error silently
         }
       } else {
@@ -609,7 +633,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   };
 
   const getWinner = () => {
-    if (candidates.length === 0) return { id: -1, name: "No winner", votes: 0, percentage: 0 };
+    if (candidates.length === 0)
+      return { id: -1, name: "No winner", votes: 0, percentage: 0 };
     return candidates.reduce((prev, current) =>
       prev.votes > current.votes ? prev : current
     );
@@ -806,11 +831,10 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                             <Users className="w-5 h-5 text-orange-400" />
                           </div>
                           <div>
-                            <div className="text-orange-400">
-                              Room is full!
-                            </div>
+                            <div className="text-orange-400">Room is full!</div>
                             <div className="text-sm text-orange-300/70">
-                              This room has reached maximum capacity. No new participants can join, but voting is still active.
+                              This room has reached maximum capacity. No new
+                              participants can join, but voting is still active.
                             </div>
                           </div>
                         </div>
@@ -856,7 +880,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                               All participants have voted!
                             </div>
                             <div className="text-sm text-blue-300/70">
-                              Voting is complete. Results are now available below.
+                              Voting is complete. Results are now available
+                              below.
                             </div>
                           </div>
                         </div>
@@ -978,7 +1003,10 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                       const isVotedFor =
                         hasVoted && votedCandidate === candidate.id;
                       const isWinner =
-                        showResults && candidate.id === getWinner().id;
+                        showResults &&
+                        candidates.length > 0 &&
+                        candidates.some((c) => c.votes > 0) &&
+                        candidate.id === getWinner().id;
 
                       return (
                         <Card
@@ -1275,12 +1303,15 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                   >
                     <div
                       className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                        (!room.isActive && showResults) || (room.isActive && currentVoters >= room.maxParticipants)
+                        (!room.isActive && showResults) ||
+                        (room.isActive && currentVoters >= room.maxParticipants)
                           ? "border-green-400 bg-green-400/20"
                           : "border-gray-600"
                       }`}
                     >
-                      {(!room.isActive && showResults) || (room.isActive && currentVoters >= room.maxParticipants) ? (
+                      {(!room.isActive && showResults) ||
+                      (room.isActive &&
+                        currentVoters >= room.maxParticipants) ? (
                         <Check className="w-3 h-3" />
                       ) : (
                         "4"
