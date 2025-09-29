@@ -89,9 +89,11 @@ export function DashboardPage({ onNavigate }: DashboardPageProps) {
   // Pagination settings
   const roomsPerPage = 4;
   const totalPages = Math.ceil(rooms.length / roomsPerPage);
-  const currentRooms = rooms
-    .slice(currentPage * roomsPerPage, (currentPage + 1) * roomsPerPage)
-    .reverse();
+  const currentRooms = rooms.slice(
+    currentPage * roomsPerPage,
+    (currentPage + 1) * roomsPerPage
+  );
+  currentRooms.reverse();
 
   // Check if voting room is ready
   const isVotingRoomReady = useMemo(() => {

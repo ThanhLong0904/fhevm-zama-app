@@ -311,14 +311,27 @@ export function CreateRoomPage({ onNavigate }: CreateRoomPageProps) {
           errorMsg =
             "One or more candidate images are too large. Please use images smaller than 1MB, or reduce total image size.";
         }
-        
+
         setErrorMessage(`Failed to create room: ${errorMsg}`);
         setShowError(true);
       }
     } catch (error) {
       const errorMsg =
         error instanceof Error ? error.message : "Unknown error occurred";
-      setErrorMessage(`Error creating room: ${errorMsg}`);
+
+      // Check for insufficient funds error
+      if (
+        errorMsg.toLowerCase().includes("insufficient funds") ||
+        errorMsg.toLowerCase().includes("not enough funds") ||
+        errorMsg.toLowerCase().includes("insufficient balance") ||
+        errorMsg.toLowerCase().includes("cannot estimate gas")
+      ) {
+        setErrorMessage(
+          "Your wallet does not have enough ETH to confirm this transaction. Please add more ETH to your wallet and try again."
+        );
+      } else {
+        setErrorMessage(`Error creating room: ${errorMsg}`);
+      }
       setShowError(true);
     } finally {
       setIsCreating(false);
