@@ -4,6 +4,7 @@ import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
 import { Progress } from "./ui/progress";
 import { Toast } from "./ui/toast";
+import { StatusBanner, InfoStatusBanner } from "./ui/status-banner";
 import { ImageWithFallback } from "./figma/ImageWithFallback";
 import {
   ArrowLeft,
@@ -69,6 +70,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   const [showError, setShowError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isLoadingUserStatus, setIsLoadingUserStatus] = useState(true);
+  const [isReadyToShowBanner, setIsReadyToShowBanner] = useState(false);
+  const [isJustVoted, setIsJustVoted] = useState(false); // Prevent flickering after voting
   const hasLoadedRef = useRef(false);
 
   // Password verification states
@@ -145,12 +148,31 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
   // Reset loading state when component unmounts or roomCode changes
   useEffect(() => {
     setIsLoadingUserStatus(true);
+    setIsReadyToShowBanner(false);
     hasLoadedRef.current = false;
     setVotedCandidate(null); // Reset voted candidate when room changes
     setSelectedCandidate(null); // Reset selected candidate when room changes
     setIsPasswordVerified(false); // Reset password verification when room changes
     setIsReloadingUserStatus(false); // Reset reloading status when room changes
   }, [roomCode]);
+
+  // Anti-flicker effect for banner display
+  useEffect(() => {
+    if (!isLoadingUserStatus) {
+      const timer = setTimeout(() => setIsReadyToShowBanner(true), 100);
+      return () => clearTimeout(timer);
+    } else {
+      setIsReadyToShowBanner(false);
+    }
+  }, [isLoadingUserStatus]);
+
+  // Reset isJustVoted flag after voting to allow banner transitions
+  useEffect(() => {
+    if (isJustVoted) {
+      const timer = setTimeout(() => setIsJustVoted(false), 4000); // Reset after 4 seconds
+      return () => clearTimeout(timer);
+    }
+  }, [isJustVoted]);
 
   // Load room data on component mount
   useEffect(() => {
@@ -544,6 +566,7 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
       if (success) {
         setHasVoted(true);
         setVotedCandidate(selectedCandidate); // Lưu candidate đã vote
+        setIsJustVoted(true); // Set flag to prevent banner flickering
 
         // Get updated vote count from smart contract instead of local increment
         try {
@@ -783,8 +806,8 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
 
               {/* Room Status Messages - Only show one at a time based on priority */}
               {(() => {
-                // Don't show any banner while loading user status to prevent flicker
-                if (isLoadingUserStatus) {
+                // Don't show any banner while loading user status or not ready to prevent flicker
+                if (isLoadingUserStatus || !isReadyToShowBanner) {
                   return null;
                 }
 
@@ -792,126 +815,70 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                 // Only show if room has password AND user is not verified AND not already a participant
                 if (room.hasPassword && !isPasswordVerified && !isParticipant) {
                   return (
-                    <Card className="bg-yellow-500/10 border-yellow-500/30 mb-8">
-                      <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <div className="p-2 bg-yellow-500/20 rounded-full">
-                              <Shield className="w-5 h-5 text-yellow-400" />
-                            </div>
-                            <div>
-                              <div className="text-yellow-400 font-semibold">
-                                This room is password protected
-                              </div>
-                              <div className="text-sm text-yellow-300/70">
-                                Please enter the password to view and
-                                participate in this room
-                              </div>
-                            </div>
-                          </div>
-                          <Button
-                            onClick={() => setShowPasswordDialog(true)}
-                            className="bg-yellow-500 hover:bg-yellow-600 text-black"
-                          >
-                            Join Room
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <StatusBanner
+                      color="yellow"
+                      icon={<Shield className="w-5 h-5" />}
+                      title="This room is password protected"
+                      description="Please enter the password to view and participate in this room"
+                      buttonText="Join Room"
+                      onButtonClick={() => setShowPasswordDialog(true)}
+                    />
                   );
                 }
 
                 // Priority 1: Room closed for new participants
                 if (room.isClosed && room.isActive) {
                   return (
-                    <Card className="bg-orange-500/10 border-orange-500/30 mb-8">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-orange-500/20 rounded-full">
-                            <Users className="w-5 h-5 text-orange-400" />
-                          </div>
-                          <div>
-                            <div className="text-orange-400">Room is full!</div>
-                            <div className="text-sm text-orange-300/70">
-                              This room has reached maximum capacity. No new
-                              participants can join, but voting is still active.
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <InfoStatusBanner
+                      color="orange"
+                      icon={<Users className="w-5 h-5" />}
+                      title="Room is full!"
+                      description="This room has reached maximum capacity. No new participants can join, but voting is still active."
+                    />
                   );
                 }
 
-                // Priority 2: Room ended
-                if (!room.isActive) {
+                // Priority 2: Room ended - but only show if user hasn't just voted
+                if (!room.isActive && !isJustVoted) {
                   return (
-                    <Card className="bg-red-500/10 border-red-500/30 mb-8">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-red-500/20 rounded-full">
-                            <Vote className="w-5 h-5 text-red-400" />
-                          </div>
-                          <div>
-                            <div className="text-red-400">
-                              This voting room has ended
-                            </div>
-                            <div className="text-sm text-red-300/70">
-                              You can view the results but cannot vote anymore
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <InfoStatusBanner
+                      color="red"
+                      icon={<Vote className="w-5 h-5" />}
+                      title="This voting room has ended"
+                      description="You can view the results but cannot vote anymore"
+                    />
                   );
                 }
 
-                // Priority 3: Max participants have voted (results announcement condition)
-                if (room.isActive && currentVoters >= room.maxParticipants) {
+                // Priority 3: Max participants have voted (results announcement condition) - but only if not just voted
+                if (
+                  room.isActive &&
+                  currentVoters >= room.maxParticipants &&
+                  !isJustVoted
+                ) {
                   return (
-                    <Card className="bg-blue-500/10 border-blue-500/30 mb-8">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-blue-500/20 rounded-full">
-                            <Trophy className="w-5 h-5 text-blue-400" />
-                          </div>
-                          <div>
-                            <div className="text-blue-400">
-                              All participants have voted!
-                            </div>
-                            <div className="text-sm text-blue-300/70">
-                              Voting is complete. Results are now available
-                              below.
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <InfoStatusBanner
+                      color="blue"
+                      icon={<Trophy className="w-5 h-5" />}
+                      title="All participants have voted!"
+                      description="Voting is complete. Results are now available below."
+                    />
                   );
                 }
 
                 // Priority 4: User already voted
                 if (hasVoted) {
                   return (
-                    <Card className="bg-green-500/10 border-green-500/30 mb-8">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-green-500/20 rounded-full">
-                            <Check className="w-5 h-5 text-green-400" />
-                          </div>
-                          <div>
-                            <div className="text-green-400">
-                              You have voted successfully!
-                            </div>
-                            <div className="text-sm text-green-300/70">
-                              {room.isActive
-                                ? "Your vote has been encrypted and recorded securely. Results will be available when voting ends."
-                                : "Your vote has been encrypted and recorded securely. Results are now available below."}
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <InfoStatusBanner
+                      color="green"
+                      icon={<Check className="w-5 h-5" />}
+                      title="You have voted successfully!"
+                      description={
+                        room.isActive
+                          ? "Your vote has been encrypted and recorded securely. Results will be available when voting ends."
+                          : "Your vote has been encrypted and recorded securely. Results are now available below."
+                      }
+                    />
                   );
                 }
 
@@ -923,28 +890,16 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                 // Priority 6: Room is full
                 if (currentParticipants >= room.maxParticipants) {
                   return (
-                    <Card className="bg-orange-500/10 border-orange-500/30 mb-8">
-                      <CardContent className="p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-orange-500/20 rounded-full">
-                            <Users className="w-5 h-5 text-orange-400" />
-                          </div>
-                          <div>
-                            <div className="text-orange-400">
-                              This room is full
-                            </div>
-                            <div className="text-sm text-orange-300/70">
-                              Maximum number of participants (
-                              {room.maxParticipants}) has been reached
-                            </div>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
+                    <InfoStatusBanner
+                      color="orange"
+                      icon={<Users className="w-5 h-5" />}
+                      title="This room is full"
+                      description={`Maximum number of participants (${room.maxParticipants}) has been reached`}
+                    />
                   );
                 }
 
-                // Priority 5: User needs to join
+                // Priority 7: User needs to join
                 // Don't show if password is verified (user is in the process of joining) or if we're reloading user status
                 if (
                   room.hasPassword &&
@@ -954,32 +909,15 @@ export function RoomVotingPage({ onNavigate, roomCode }: RoomVotingPageProps) {
                 }
 
                 return (
-                  <Card className="bg-yellow-500/10 border-yellow-500/30 mb-8">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="p-2 bg-yellow-500/20 rounded-full">
-                            <Users className="w-5 h-5 text-yellow-400" />
-                          </div>
-                          <div>
-                            <div className="text-yellow-400">
-                              You need to join this room to vote
-                            </div>
-                            <div className="text-sm text-yellow-300/70">
-                              Click the button to become a participant
-                            </div>
-                          </div>
-                        </div>
-                        <Button
-                          onClick={handleJoinRoom}
-                          disabled={isJoining}
-                          className="bg-yellow-500 hover:bg-yellow-600 text-black"
-                        >
-                          {isJoining ? "Joining..." : "Join Room"}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
+                  <StatusBanner
+                    color="yellow"
+                    icon={<Users className="w-5 h-5" />}
+                    title="You need to join this room to vote"
+                    description="Click the button to become a participant"
+                    buttonText={isJoining ? "Joining..." : "Join Room"}
+                    onButtonClick={handleJoinRoom}
+                    buttonDisabled={isJoining}
+                  />
                 );
               })()}
 

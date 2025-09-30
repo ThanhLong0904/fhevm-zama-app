@@ -238,6 +238,13 @@ export function HomePage({ onNavigate }: HomePageProps) {
     // Check if room exists
     if (existingRoomCodes.includes(trimmedCode)) {
       const room = featuredRooms.find((r) => r.code === trimmedCode);
+      if (!room) {
+        setErrorMessage(
+          `Room "${trimmedCode}" does not exist. Please check the room code and try again.`
+        );
+        setShowError(true);
+        return;
+      }
       if (room?.hasPassword) {
         // Check room capacity first
         const roomInfo = await votingRoom?.getRoomInfo(room.code);
@@ -250,7 +257,34 @@ export function HomePage({ onNavigate }: HomePageProps) {
         setSelectedRoom(room);
         setShowPasswordDialog(true);
       } else {
-        onNavigate("voting", { roomCode: trimmedCode });
+        try {
+          const roomFunctions = {
+            checkParticipantStatus:
+              votingRoom?.checkParticipantStatus ||
+              (async () => ({ isParticipant: false, hasVoted: false })),
+            getRoomPasswordHash:
+              votingRoom?.getRoomPasswordHash ||
+              (async () => ({ hasPassword: false, passwordHash: null })),
+            validatePasswordLocally:
+              votingRoom?.validatePasswordLocally || (() => false),
+            joinRoom: votingRoom?.joinRoom || (() => Promise.resolve(false)),
+          };
+          const result = await handleNonPasswordRoomEntry(
+            room.code,
+            roomFunctions
+          );
+          if (result.success) {
+            onNavigate("voting", { roomCode: trimmedCode });
+          } else {
+            setErrorMessage(
+              result.error || "Failed to join room. Please try again."
+            );
+            setShowError(true);
+          }
+        } catch {
+          setErrorMessage("An unexpected error occurred. Please try again.");
+          setShowError(true);
+        }
       }
     } else {
       setErrorMessage(
@@ -624,7 +658,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
               return getCurrentPageRooms().map((room) => (
                 <Card
                   key={room.code}
-                  className={`bg-gray-800/50 border-gray-700/50 hover:bg-gray-700/50 hover:border-gray-600/50 transition-all duration-300 hover:-translate-y-1 cursor-pointer ${
+                  className={`bg-gray-800/50 border-gray-700/50 gap-4 hover:bg-gray-700/50 hover:border-gray-600/50 transition-all duration-300 hover:-translate-y-1 cursor-pointer ${
                     isProcessing ? "opacity-50 cursor-not-allowed" : ""
                   }`}
                   onClick={() => !isProcessing && handleRoomCardClick(room)}
@@ -659,7 +693,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
                     <CardTitle className="text-white hover:text-blue-400 transition-colors">
                       {room.title}
                     </CardTitle>
-                    <CardDescription className="text-gray-400">
+                    <CardDescription className="text-gray-400 line-clamp-2 min-h-[3rem]">
                       {room.description}
                     </CardDescription>
                   </CardHeader>
